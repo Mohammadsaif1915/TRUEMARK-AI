@@ -1,0 +1,75 @@
+{
+  "_comment": "Yeh file Legal Metrology (Packaged Commodities) Rules, 2011 ke mandatory declarations ko 'rules' ke roop mein define karti hai. Naya rule add karna ho toh bas neeche ek naya object add kar do - code change nahi karna padega. Isi baat ko demo mein dikhana - 'rule engine config-driven hai'.",
+
+  "rules": [
+    {
+      "id": "R001",
+      "field": "manufacturer_address",
+      "label": "Manufacturer / Packer / Importer Name & Address",
+      "description": "Label par manufacturer ya packer ya importer ka naam aur poora address hona chahiye.",
+      "keywords": ["manufactured by", "packed by", "marketed by", "mfd by", "mktd by", "imported by"],
+      "regex": "(manufactured|packed|marketed|mfd|mktd|imported)\\s*by[:\\s]*([A-Za-z0-9,.\\-/&\\s]{10,150})",
+      "required": true,
+      "severity": "high"
+    },
+    {
+      "id": "R002",
+      "field": "net_quantity",
+      "label": "Net Quantity",
+      "description": "Product ki net quantity standard unit (g, kg, ml, l, ya count) mein clearly likhi honi chahiye.",
+      "keywords": ["net qty", "net quantity", "net wt", "net weight", "net vol", "net volume"],
+      "regex": "(net\\.?\\s?(qty|quantity|wt|weight|vol|volume)?)[:\\s]*([0-9]+\\.?[0-9]*)\\s*(g|gm|gms|kg|ml|l|litre|liter|pcs|pieces|n|no\\.?)",
+      "required": true,
+      "severity": "high"
+    },
+    {
+      "id": "R003",
+      "field": "mrp",
+      "label": "Maximum Retail Price (MRP)",
+      "description": "MRP 'inclusive of all taxes' ke saath currency symbol (Rs./₹) mein likhi honi chahiye.",
+      "keywords": ["mrp", "maximum retail price", "m.r.p"],
+      "regex": "(mrp|maximum retail price|m\\.r\\.p)[.:\\s]*(rs\\.?|₹|inr)?\\s*([0-9]+[.,]?[0-9]*)",
+      "required": true,
+      "severity": "high"
+    },
+    {
+      "id": "R004",
+      "field": "mfg_date",
+      "label": "Month & Year of Manufacture/Packing/Import",
+      "description": "Manufacturing ya packing ya import ka month aur year clearly likha hona chahiye (MM/YYYY ya Month YYYY format mein).",
+      "keywords": ["mfg date", "mfd", "pkd on", "manufacturing date", "date of manufacture", "packed on"],
+      "regex": "(mfg|mfd|pkd|packed|manufactur\\w*)[.\\s]*(date|on)?[:\\s]*([0-9]{1,2}[/\\-][0-9]{2,4}|[a-z]{3,9}\\s?[0-9]{4})",
+      "required": true,
+      "severity": "high"
+    },
+    {
+      "id": "R005",
+      "field": "consumer_care",
+      "label": "Consumer Care Details",
+      "description": "Consumer care ka phone number ya email address label par hona chahiye taaki customer complaint kar sake.",
+      "keywords": ["customer care", "consumer care", "toll free", "helpline"],
+      "regex": "(customer care|consumer care|toll free|helpline)[:\\s]*([0-9\\-+\\s]{8,15}|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+)",
+      "required": true,
+      "severity": "medium"
+    },
+    {
+      "id": "R006",
+      "field": "country_of_origin",
+      "label": "Country of Origin",
+      "description": "Agar product imported hai toh country of origin batana mandatory hai.",
+      "keywords": ["country of origin", "made in", "product of"],
+      "regex": "(country of origin|made in|product of)[:\\s]*([a-zA-Z\\s]{3,30})",
+      "required": false,
+      "severity": "low"
+    },
+    {
+      "id": "R007",
+      "field": "font_size",
+      "label": "Minimum Font Size / Readability",
+      "description": "Declarations ka font size legal minimum se chota nahi hona chahiye taaki normal vision wala consumer bina magnifying glass ke padh sake. NOTE: Bina physical reference scale (jaise ek known-size object image mein) ke, pixel se real-world mm nikalna approximate hi hota hai - yeh ek heuristic check hai, legal proof nahi.",
+      "min_text_height_ratio": 0.012,
+      "required": true,
+      "severity": "medium"
+    }
+  ]
+}
