@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
 from app import db
-from app.models import User, Scan
+from app.models import User, Scan, VALID_ROLES
 from app.services.ocr_service import process_image_pipeline
 from app.services.validation_service import validate_compliance
 from app.services.mismatch_service import cross_check
@@ -146,7 +146,7 @@ def get_scan(scan_id):
         if not scan:
             return jsonify({"error": "Scan not found"}), 404
 
-        if user.role not in ("admin", "officer") and scan.user_id != user_id:
+        if user.role not in set(VALID_ROLES) | {"admin", "officer"} and scan.user_id != user_id:
             return jsonify({"error": "Access denied"}), 403
 
         return jsonify({"scan": scan.to_dict()}), 200
@@ -168,7 +168,7 @@ def get_report(scan_id):
         if not scan:
             return jsonify({"error": "Scan not found"}), 404
 
-        if user.role not in ("admin", "officer") and scan.user_id != user_id:
+        if user.role not in set(VALID_ROLES) | {"admin", "officer"} and scan.user_id != user_id:
             return jsonify({"error": "Access denied"}), 403
 
         report_path = generate_pdf_report(scan)
@@ -179,7 +179,7 @@ def get_report(scan_id):
             os.path.abspath(report_path),
             mimetype="application/pdf",
             as_attachment=True,
-            download_name=f"meterolens_report_{scan_id}.pdf",
+            download_name=f"truemark_report_{scan_id}.pdf",
         )
 
     except Exception as e:

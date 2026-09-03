@@ -36,10 +36,10 @@ const BarcodeScanner = ({ onScan, onClose }) => {
           (decodedText) => {
             if (mounted) {
               onScan(decodedText);
-              html5QrCode.stop().catch(() => {});
+              html5QrCode.stop().catch(() => { });
             }
           },
-          () => {}
+          () => { }
         );
       } catch (err) {
         if (mounted) {
@@ -54,27 +54,38 @@ const BarcodeScanner = ({ onScan, onClose }) => {
     return () => {
       mounted = false;
       if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current.clear().catch(() => {});
+        scannerRef.current.stop().catch(() => { });
+        scannerRef.current.clear().catch(() => { });
       }
     };
   }, [onScan, onClose]);
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h3 className="font-bold text-gray-900 flex items-center space-x-2">
-            <FiCamera className="h-5 w-5 text-primary-800" />
+    <div className="tm-anim-backdrop fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+      <div className="tm-anim-modal bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <h3 className="font-bold text-slate-900 flex items-center space-x-2">
+            <FiCamera className="h-5 w-5 text-indigo-600" />
             <span>Scan Barcode / QR Code</span>
           </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1" aria-label="Close scanner">
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 p-1 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+            aria-label="Close scanner"
+          >
             <FiX className="h-5 w-5" />
           </button>
         </div>
         <div className="p-4">
-          <div id="barcode-reader" className="w-full rounded-xl overflow-hidden" />
-          <p className="text-xs text-gray-500 text-center mt-3">Point your camera at a barcode or QR code on the product label.</p>
+          <div className="relative w-full rounded-xl overflow-hidden bg-slate-900">
+            <div id="barcode-reader" className="w-full" />
+            <div
+              className="tm-scan-line pointer-events-none absolute inset-x-4 h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"
+              style={{ boxShadow: '0 0 8px 2px rgba(99,102,241,0.6)' }}
+              aria-hidden="true"
+            />
+          </div>
+          <p className="text-xs text-slate-500 text-center mt-3">Point your camera at a barcode or QR code on the product label.</p>
         </div>
       </div>
     </div>
@@ -89,21 +100,22 @@ const ScanUpload = () => {
   const [state, setState] = useState('');
   const [uploading, setUploading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
   const navigate = useNavigate();
 
   const handleFiles = (selectedFiles) => {
     if (!selectedFiles || selectedFiles.length === 0) return;
-    
+
     const newFiles = Array.from(selectedFiles).filter(f => f.type.startsWith('image/'));
     if (newFiles.length === 0) {
       toast.error('Please select image files only');
       return;
     }
-    
+
     setFiles(prev => [...prev, ...newFiles]);
-    
+
     newFiles.forEach(f => {
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -122,6 +134,22 @@ const ScanUpload = () => {
     setGtin(decodedText);
     setShowScanner(false);
     toast.success(`Barcode detected: ${decodedText}`);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFiles(e.dataTransfer.files);
   };
 
   const handleUpload = async () => {
@@ -157,7 +185,47 @@ const ScanUpload = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="min-h-screen bg-[#FAF9FF]">
+      <style>{`
+        @keyframes tmFadeScaleIn {
+          from { opacity: 0; transform: scale(0.92) translateY(4px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes tmFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes tmScanSweep {
+          0% { top: 8%; opacity: 0; }
+          10% { opacity: 1; }
+          50% { top: 92%; opacity: 1; }
+          90% { opacity: 1; }
+          100% { top: 8%; opacity: 0; }
+        }
+        @keyframes tmShimmerSweep {
+          0% { left: -150%; }
+          100% { left: 150%; }
+        }
+        .tm-anim-pop { animation: tmFadeScaleIn 300ms cubic-bezier(0.16,1,0.3,1) both; }
+        .tm-anim-backdrop { animation: tmFadeIn 200ms ease-out both; }
+        .tm-anim-modal { animation: tmFadeScaleIn 280ms cubic-bezier(0.16,1,0.3,1) both; }
+        .tm-scan-line { animation: tmScanSweep 2.2s ease-in-out infinite; }
+        .tm-shimmer { position: relative; overflow: hidden; }
+        .tm-shimmer::after {
+          content: '';
+          position: absolute;
+          top: 0; left: -150%;
+          height: 100%; width: 150%;
+          background: linear-gradient(120deg, transparent, rgba(255,255,255,0.35), transparent);
+          animation: tmShimmerSweep 1.4s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .tm-anim-pop, .tm-anim-backdrop, .tm-anim-modal, .tm-scan-line, .tm-shimmer::after {
+            animation: none !important;
+          }
+        }
+      `}</style>
+
       {showScanner && (
         <BarcodeScanner
           onScan={handleBarcodeScan}
@@ -165,133 +233,152 @@ const ScanUpload = () => {
         />
       )}
 
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Product Scan</h1>
-        <p className="text-gray-600 mt-1">Upload a product label image for AI compliance verification.</p>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-        <h2 className="text-xl font-bold mb-2">Upload Label Image</h2>
-        <p className="text-gray-600 mb-6">Capture the product label clearly, including MRP, manufacturer details, and quantity.</p>
-
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div
-              onClick={() => cameraInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-primary-400 hover:bg-gray-50 transition-colors"
-            >
-              <FiCamera className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-md font-medium text-gray-900">Take Photo</p>
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={(e) => handleFiles(e.target.files)}
-                className="hidden"
-              />
-            </div>
-            <div
-              onClick={() => galleryInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-primary-400 hover:bg-gray-50 transition-colors"
-            >
-              <FiUpload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-md font-medium text-gray-900">Upload Files</p>
-              <input
-                ref={galleryInputRef}
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={(e) => handleFiles(e.target.files)}
-                className="hidden"
-              />
-            </div>
-          </div>
-
-          {previews.length > 0 && (
-            <div className="mt-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Selected Images ({previews.length})</h3>
-              <div className="flex space-x-4 overflow-x-auto pb-4 snap-x">
-                {previews.map((preview, index) => (
-                  <div key={index} className="relative flex-none snap-start">
-                    <img src={preview} alt={`Preview ${index}`} className="w-32 h-32 object-cover rounded-xl border border-gray-200" />
-                    <button
-                      onClick={() => removeFile(index)}
-                      aria-label="Remove image"
-                      className="absolute top-1 right-1 bg-white hover:bg-red-50 rounded-full p-1.5 shadow-md text-red-500"
-                    >
-                      <FiX size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="mb-8 flex items-start gap-3">
+          <span className="mt-1.5 h-8 w-1.5 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500 shrink-0" aria-hidden="true"></span>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">E-Commerce Listing URL (Optional)</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FiLink className="text-gray-400" />
-              </div>
-              <input
-                type="url"
-                value={listingUrl}
-                onChange={(e) => setListingUrl(e.target.value)}
-                placeholder="https://amazon.in/dp/..."
-                className="pl-10 w-full rounded-lg border-gray-300 border p-3 focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Product Scan</h1>
+            <p className="text-slate-500 mt-1">Upload a product label image for AI compliance verification.</p>
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">GTIN / Barcode</label>
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  value={gtin}
-                  onChange={(e) => setGtin(e.target.value)}
-                  placeholder="e.g. 8901234567890"
-                  className="flex-1 rounded-lg border-gray-300 border p-3 focus:ring-primary-500 focus:border-primary-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowScanner(true)}
-                  className="px-4 py-3 bg-primary-100 text-primary-800 rounded-lg hover:bg-primary-200 transition-colors flex items-center space-x-1.5 flex-shrink-0"
-                  title="Scan barcode with camera"
-                >
-                  <FiCamera className="h-4 w-4" />
-                  <span className="text-sm font-medium hidden sm:inline">Scan</span>
-                </button>
-              </div>
-            </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6 sm:p-8">
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Upload Label Image</h2>
+          <p className="text-slate-500 mb-6">Capture the product label clearly, including MRP, manufacturer details, and quantity.</p>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <FiMapPin className="inline h-3.5 w-3.5 mr-1" />
-                State / UT (Optional)
-              </label>
-              <select
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-                className="w-full rounded-lg border-gray-300 border p-3 focus:ring-primary-500 focus:border-primary-500 bg-white"
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div
+                onClick={() => cameraInputRef.current?.click()}
+                className="group border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition-all duration-200"
               >
-                <option value="">Select state...</option>
-                {INDIA_STATES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                  <FiCamera className="h-6 w-6" />
+                </div>
+                <p className="text-md font-medium text-slate-900">Take Photo</p>
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => handleFiles(e.target.files)}
+                  className="hidden"
+                />
+              </div>
+              <div
+                onClick={() => galleryInputRef.current?.click()}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`group border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200 ${isDragging
+                    ? 'border-indigo-500 bg-indigo-50 scale-[1.01]'
+                    : 'border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/40'
+                  }`}
+              >
+                <div className={`mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full transition-colors ${isDragging ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600'
+                  }`}>
+                  <FiUpload className="h-6 w-6" />
+                </div>
+                <p className="text-md font-medium text-slate-900">
+                  {isDragging ? 'Drop to upload' : 'Upload Files'}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">or drag and drop</p>
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(e) => handleFiles(e.target.files)}
+                  className="hidden"
+                />
+              </div>
             </div>
-          </div>
 
-          <button
-            onClick={handleUpload}
-            disabled={uploading || files.length === 0}
-            className="w-full flex justify-center items-center py-4 bg-primary-800 hover:bg-primary-900 text-white font-bold rounded-xl transition-colors disabled:opacity-50"
-          >
-            {uploading ? 'Analyzing and Verifying...' : 'Submit for AI Verification'}
-          </button>
+            {previews.length > 0 && (
+              <div className="mt-4">
+                <h3 className="text-sm font-medium text-slate-700 mb-3">Selected Images ({previews.length})</h3>
+                <div className="flex space-x-4 overflow-x-auto pb-4 snap-x">
+                  {previews.map((preview, index) => (
+                    <div key={index} className="tm-anim-pop relative flex-none snap-start">
+                      <img src={preview} alt={`Preview ${index}`} className="w-32 h-32 object-cover rounded-xl border border-slate-200" />
+                      <button
+                        onClick={() => removeFile(index)}
+                        aria-label="Remove image"
+                        className="absolute top-1 right-1 bg-white hover:bg-rose-50 rounded-full p-1.5 shadow-md text-rose-500 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                      >
+                        <FiX size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">E-Commerce Listing URL (Optional)</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <FiLink className="text-slate-400" />
+                </div>
+                <input
+                  type="url"
+                  value={listingUrl}
+                  onChange={(e) => setListingUrl(e.target.value)}
+                  placeholder="https://amazon.in/dp/..."
+                  className="pl-10 w-full rounded-lg border-slate-300 border p-3 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-shadow"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">GTIN / Barcode</label>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={gtin}
+                    onChange={(e) => setGtin(e.target.value)}
+                    placeholder="e.g. 8901234567890"
+                    className="flex-1 rounded-lg border-slate-300 border p-3 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-shadow"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowScanner(true)}
+                    className="px-4 py-3 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors flex items-center space-x-1.5 flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                    title="Scan barcode with camera"
+                  >
+                    <FiCamera className="h-4 w-4" />
+                    <span className="text-sm font-medium hidden sm:inline">Scan</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <FiMapPin className="inline h-3.5 w-3.5 mr-1" />
+                  State / UT (Optional)
+                </label>
+                <select
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                  className="w-full rounded-lg border-slate-300 border p-3 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-shadow bg-white"
+                >
+                  <option value="">Select state...</option>
+                  {INDIA_STATES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={handleUpload}
+              disabled={uploading || files.length === 0}
+              className={`w-full flex justify-center items-center py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold rounded-xl transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none ${uploading ? 'tm-shimmer' : ''}`}
+            >
+              {uploading ? 'Analyzing and Verifying...' : 'Submit for AI Verification'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

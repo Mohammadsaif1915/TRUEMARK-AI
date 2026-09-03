@@ -2,6 +2,28 @@ from datetime import datetime, timezone
 from app import db
 import bcrypt
 
+# Controlled role constants
+VALID_ROLES = (
+    "inspector",
+    "enforcement_officer",
+    "administrator",
+    "supervisor",
+    "field_officer",
+)
+
+ROLE_DISPLAY_NAMES = {
+    "inspector": "Inspector",
+    "enforcement_officer": "Enforcement Officer",
+    "administrator": "Administrator",
+    "supervisor": "Supervisor",
+    "field_officer": "Field Officer",
+    # Legacy roles (for backward compatibility)
+    "citizen": "Citizen",
+    "viewer": "Viewer",
+    "admin": "Administrator",
+    "officer": "Officer",
+}
+
 
 class User(db.Model):
     __tablename__ = "users"
@@ -10,7 +32,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
-    role = db.Column(db.String(20), nullable=False, default="viewer")
+    role = db.Column(db.String(30), nullable=False, default="inspector")
     full_name = db.Column(db.String(150), nullable=True)
     badge_number = db.Column(db.String(50), nullable=True)
     created_at = db.Column(
@@ -29,12 +51,17 @@ class User(db.Model):
             password.encode("utf-8"), self.password_hash.encode("utf-8")
         )
 
+    @property
+    def role_display_name(self):
+        return ROLE_DISPLAY_NAMES.get(self.role, self.role.replace("_", " ").title())
+
     def to_dict(self):
         return {
             "id": self.id,
             "username": self.username,
             "email": self.email,
             "role": self.role,
+            "role_display_name": self.role_display_name,
             "full_name": self.full_name,
             "badge_number": self.badge_number,
             "created_at": self.created_at.isoformat(),

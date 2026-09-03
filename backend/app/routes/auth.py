@@ -1,3 +1,4 @@
+import re
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import (
     create_access_token,
@@ -5,11 +6,11 @@ from flask_jwt_extended import (
     get_jwt_identity,
 )
 from app import db
-from app.models import User
+from app.models import User, VALID_ROLES, ROLE_DISPLAY_NAMES
 
 auth_bp = Blueprint("auth", __name__)
 
-VALID_ROLES = ("admin", "officer", "viewer")
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
 @auth_bp.route("/register", methods=["POST"])
@@ -19,40 +20,39 @@ def register():
         if not data:
             return jsonify({"error": "Request body must be JSON"}), 400
 
-        required_fields = ["username", "email", "password"]
+        required_fields = ["username", "email", "password", "role"]
         missing = [f for f in required_fields if not data.get(f)]
         if missing:
             return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
 
+        # Email format validation
+        email = data["email"].strip().lower()
+        if not EMAIL_REGEX.match(email):
+            return jsonify({"error": "Invalid email address"}), 400
+
+        # Password length validation
+        if len(data["password"]) < 6:
+            return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+        # Duplicate checks
         if User.query.filter_by(username=data["username"]).first():
             return jsonify({"error": "Username already exists"}), 409
-        if User.query.filter_by(email=data["email"]).first():
-            return jsonify({"error": "Email already exists"}), 409
+        if User.query.filter_by(email=email).first():
+            return jsonify({"error": "Email already registered"}), 409
 
-        role = data.get("role", "viewer").lower()
+        # Role validation
+        role = data["role"].strip().lower()
         if role not in VALID_ROLES:
-            return jsonify({"error": f"Invalid role. Must be one of: {', '.join(VALID_ROLES)}"}), 400
-
-        requestor_id = None
-        try:
-            requestor_id = get_jwt_identity()
-        except Exception:
-            requestor_id = None
-
-        if requestor_id:
-            requestor = User.query.get(requestor_id)
-            if requestor and requestor.role != "admin" and role != "viewer":
-                role = "viewer"
-        else:
-            if role != "viewer":
-                role = "viewer"
+            return jsonify({
+                "error": f"Please select a role. Must be one of: {', '.join(ROLE_DISPLAY_NAMES[r] for r in VALID_ROLES)}"
+            }), 400
 
         user = User(
-            username=data["username"],
-            email=data["email"],
+            username=data["username"].strip(),
+            email=email,
             role=role,
-            full_name=data.get("full_name"),
-            badge_number=data.get("badge_number"),
+            full_name=data.get("full_name", "").strip() or None,
+            badge_number=data.get("badge_number", "").strip() or None,
         )
         user.set_password(data["password"])
 
@@ -79,9 +79,10 @@ def login():
         if not data.get("email") or not data.get("password"):
             return jsonify({"error": "Email and password are required"}), 400
 
-        user = User.query.filter_by(email=data["email"]).first()
+        email = data["email"].strip().lower()
+        user = User.query.filter_by(email=email).first()
         if not user or not user.check_password(data["password"]):
-            return jsonify({"error": "Invalid username or password"}), 401
+            return jsonify({"error": "Invalid email or password"}), 401
 
         access_token = create_access_token(identity=str(user.id))
 

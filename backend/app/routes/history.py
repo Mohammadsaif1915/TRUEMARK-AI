@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
-from app.models import User, Scan
+from app.models import User, Scan, VALID_ROLES
 
 history_bp = Blueprint("history", __name__)
 
@@ -49,7 +49,7 @@ def delete_scan(scan_id):
         if not scan:
             return jsonify({"error": "Scan not found"}), 404
 
-        if scan.user_id != user_id and user.role != "admin":
+        if scan.user_id != user_id and user.role not in set(VALID_ROLES) | {"admin", "administrator"}:
             return jsonify({"error": "Access denied. You can only delete your own scans."}), 403
 
         db.session.delete(scan)

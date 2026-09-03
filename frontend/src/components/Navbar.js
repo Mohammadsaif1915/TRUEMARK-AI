@@ -18,17 +18,30 @@ const Navbar = () => {
 
   const navLinks = [
     { to: '/upload', label: 'Scan', icon: FiSearch, show: isAuthenticated },
-    { to: '/dashboard', label: 'Dashboard', icon: FiGrid, show: isAuthenticated && ['admin', 'officer'].includes(user?.role) },
-    { to: '/map', label: 'Map', icon: FiMapPin, show: isAuthenticated && ['admin', 'officer'].includes(user?.role) },
+    { to: '/dashboard', label: 'Dashboard', icon: FiGrid, show: isAuthenticated },
+    { to: '/map', label: 'Map', icon: FiMapPin, show: isAuthenticated },
     { to: '/history', label: 'History', icon: FiClock, show: isAuthenticated },
   ];
 
   const isActive = (path) => location.pathname === path;
 
   const getRoleBadgeColor = (role) => {
-    if (role === 'admin') return 'bg-purple-100 text-purple-800';
-    if (role === 'officer') return 'bg-blue-100 text-blue-800';
-    return 'bg-gray-100 text-gray-800';
+    switch (role) {
+      case 'administrator':
+      case 'admin':
+        return 'bg-purple-100 text-purple-800';
+      case 'supervisor':
+        return 'bg-indigo-100 text-indigo-800';
+      case 'enforcement_officer':
+      case 'officer':
+        return 'bg-blue-100 text-blue-800';
+      case 'inspector':
+        return 'bg-teal-100 text-teal-800';
+      case 'field_officer':
+        return 'bg-emerald-100 text-emerald-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
   };
 
   return (
@@ -37,10 +50,8 @@ const Navbar = () => {
         <div className="flex justify-between h-16">
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2">
-              <div className="bg-white rounded-lg p-1.5">
-                <FiSearch className="h-5 w-5 text-primary-800" />
-              </div>
-              <span className="text-white text-xl font-bold tracking-tight">MeteroLens</span>
+              <img src="/logo.png" alt="TrueMark" className="h-8 w-auto object-contain" />
+              <span className="text-white text-xl font-bold tracking-tight">TrueMark</span>
             </Link>
           </div>
 
@@ -79,7 +90,7 @@ const Navbar = () => {
                   <div className="hidden sm:block text-left">
                     <p className="text-sm font-medium text-white leading-none mb-0.5">{user?.full_name || user?.username}</p>
                     <span className={`text-xs px-1.5 py-0.5 rounded-full ${getRoleBadgeColor(user?.role)}`}>
-                      {user?.role}
+                      {user?.role_display_name || user?.role}
                     </span>
                   </div>
                 </button>
@@ -92,7 +103,7 @@ const Navbar = () => {
                         <p className="text-sm font-semibold text-gray-900">{user?.full_name || user?.username}</p>
                         <p className="text-xs text-gray-500 mt-0.5">{user?.email}</p>
                         <span className={`text-xs px-2 py-0.5 rounded-full mt-1 inline-block ${getRoleBadgeColor(user?.role)}`}>
-                          {user?.role}
+                          {user?.role_display_name || user?.role}
                         </span>
                       </div>
                       <button

@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import func
 from app import db
-from app.models import User, Scan
+from app.models import User, Scan, VALID_ROLES
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
@@ -13,8 +13,10 @@ def require_officer_or_admin():
     user = User.query.get(user_id)
     if not user:
         return None, (jsonify({"error": "User not found"}), 404)
-    if user.role not in ("admin", "officer"):
-        return None, (jsonify({"error": "Access denied. Admin or officer role required."}), 403)
+    # All registered roles have dashboard access
+    allowed = set(VALID_ROLES) | {"admin", "officer", "citizen"}
+    if user.role not in allowed:
+        return None, (jsonify({"error": "Access denied. Insufficient role permissions."}), 403)
     return user, None
 
 

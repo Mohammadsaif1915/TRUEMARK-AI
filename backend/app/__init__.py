@@ -128,7 +128,7 @@ def create_app(config_name=None):
         if not anon:
             anon = User(
                 username="anonymous_citizen",
-                email="anonymous@meterolens.local",
+                email="anonymous@truemark.local",
                 role="citizen",
                 full_name="Anonymous Citizen"
             )

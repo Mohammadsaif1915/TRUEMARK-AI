@@ -27,7 +27,7 @@ def upload_to_cloudinary(file_path):
 
     try:
         # Upload the image and let Cloudinary assign a random public ID
-        upload_result = cloudinary.uploader.upload(file_path, folder="meterolens_evidence")
+        upload_result = cloudinary.uploader.upload(file_path, folder="truemark_evidence")
         
         # Return the secure HTTPS URL provided by Cloudinary
         secure_url = upload_result.get("secure_url")
