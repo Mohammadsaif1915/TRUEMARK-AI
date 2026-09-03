@@ -14,7 +14,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field as dc_field
 from typing import Optional, List, Set, Tuple
-from backend.services.ocr import OCRToken
+from app.services.legalmetai.ocr import OCRToken
 
 
 # ── Result type ───────────────────────────────────────────────────────────────
