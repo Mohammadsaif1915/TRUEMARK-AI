@@ -39,7 +39,7 @@ try:
 except:
     pass
 
-from dataset_manager import ComplianceDatasetManager
+from .dataset_manager import ComplianceDatasetManager
 
 class ComplianceMLTrainer:
     """

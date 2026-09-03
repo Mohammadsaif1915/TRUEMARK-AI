@@ -6,10 +6,10 @@ import numpy as np
 import pandas as pd
 
 # Import existing components
-from compliance_engine import LegalMetrologyRuleEngine
-from vision_processor import VisionProcessor
-from ml_trainer import ComplianceMLTrainer
-from dataset_manager import ComplianceDatasetManager
+from .compliance_engine import LegalMetrologyRuleEngine
+from .vision_processor import VisionProcessor
+from .ml_trainer import ComplianceMLTrainer
+from .dataset_manager import ComplianceDatasetManager
 
 class CascadingComplianceAnalyzer:
     """
