@@ -133,7 +133,8 @@ def generate_pdf_report(scan):
             ["Image Path", str(scan.image_path or "N/A")],
         ])
 
-        scan_table = Table(scan_data, colWidths=[2 * inch, 4.5 * inch])
+        scan_table_data = [[Paragraph(str(cell).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"), body_style) for cell in row] for row in scan_data]
+        scan_table = Table(scan_table_data, colWidths=[1.55 * inch, 4.95 * inch], repeatRows=0)
         scan_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#ecf0f1")),
             ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#2c3e50")),
@@ -175,25 +176,26 @@ def generate_pdf_report(scan):
             for check in checks:
                 status_val = check.get("status", "unknown")
                 table_data.append([
-                    check.get("rule_name", "N/A"),
-                    status_val.upper(),
-                    check.get("severity", "N/A").upper(),
-                    check.get("message", "N/A"),
+                    Paragraph(str(check.get("rule_name", "N/A")).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"), small_style),
+                    Paragraph(str(status_val).upper().replace("_"," "), small_style),
+                    Paragraph(str(check.get("severity", "N/A")).upper().replace("_"," "), small_style),
+                    Paragraph(str(check.get("message", "N/A")).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"), small_style),
                 ])
 
             check_table = Table(
                 table_data,
-                colWidths=[1.5 * inch, 0.8 * inch, 0.8 * inch, 3.4 * inch],
+                colWidths=[1.65 * inch, 1.05 * inch, 0.85 * inch, 3.0 * inch],
+                repeatRows=1,
             )
             check_table_style = [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("FONTSIZE", (0, 0), (-1, -1), 7.5),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bdc3c7")),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ]
 
@@ -333,3 +335,6 @@ def generate_pdf_report(scan):
     except Exception as e:
         print(f"Report generation error: {e}")
         return None
+
+
+

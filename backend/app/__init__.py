@@ -1,9 +1,20 @@
 import os
-from flask import Flask
+
+from dotenv import load_dotenv
+
+# Load .env from project root
+PROJECT_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)
+ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
+load_dotenv(ENV_FILE)
+
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
+
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -17,48 +28,103 @@ def create_app(config_name=None):
         app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///test.db"
         app.config["TESTING"] = True
     else:
-        app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-            "DATABASE_URL", "postgresql://postgres:password@localhost:5432/meterolens"
-        )
+        database_url = os.getenv("DATABASE_URL")
 
-    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
-    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "dev-jwt-secret")
-    
-    BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-    app.config["UPLOAD_FOLDER"] = os.path.join(BASE_DIR, "uploads")
-    app.config["MAX_CONTENT_LENGTH"] = int(
-        os.getenv("MAX_CONTENT_LENGTH", 16 * 1024 * 1024)
+        if not database_url:
+            raise RuntimeError(
+                "DATABASE_URL is missing. Please check the .env file."
+            )
+
+        app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+
+    app.config["SECRET_KEY"] = os.getenv(
+        "SECRET_KEY",
+        "dev-secret-key"
     )
+
+    app.config["JWT_SECRET_KEY"] = os.getenv(
+        "JWT_SECRET_KEY",
+        "dev-jwt-secret"
+    )
+
+    app.config["UPLOAD_FOLDER"] = os.path.join(
+        PROJECT_ROOT,
+        "backend",
+        "uploads"
+    )
+
+    app.config["MAX_CONTENT_LENGTH"] = int(
+        os.getenv(
+            "MAX_CONTENT_LENGTH",
+            16 * 1024 * 1024
+        )
+    )
+
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+    os.makedirs(
+        app.config["UPLOAD_FOLDER"],
+        exist_ok=True
+    )
 
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    CORS(
+        app,
+        resources={
+            r"/api/*": {
+                "origins": "*"
+            }
+        }
+    )
+
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
 
+    # Register routes
     from app.routes.auth import auth_bp
     from app.routes.scan import scan_bp
     from app.routes.dashboard import dashboard_bp
     from app.routes.history import history_bp
 
-    app.register_blueprint(auth_bp, url_prefix="/api/auth")
-    app.register_blueprint(scan_bp, url_prefix="/api/scan")
-    app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
-    app.register_blueprint(history_bp, url_prefix="/api/history")
+    app.register_blueprint(
+        auth_bp,
+        url_prefix="/api/auth"
+    )
 
-    from flask import send_from_directory
+    app.register_blueprint(
+        scan_bp,
+        url_prefix="/api/scan"
+    )
+
+    app.register_blueprint(
+        dashboard_bp,
+        url_prefix="/api/dashboard"
+    )
+
+    app.register_blueprint(
+        history_bp,
+        url_prefix="/api/history"
+    )
+
+    # Serve uploaded files
     @app.route("/uploads/<path:filename>")
     def serve_uploads(filename):
-        return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+        return send_from_directory(
+            app.config["UPLOAD_FOLDER"],
+            filename
+        )
 
+    # Create database tables
     with app.app_context():
         db.create_all()
-        
+
         # Ensure anonymous citizen user exists
         from app.models import User
-        anon = User.query.filter_by(username="anonymous_citizen").first()
+
+        anon = User.query.filter_by(
+            username="anonymous_citizen"
+        ).first()
+
         if not anon:
             anon = User(
                 username="anonymous_citizen",
@@ -66,7 +132,11 @@ def create_app(config_name=None):
                 role="citizen",
                 full_name="Anonymous Citizen"
             )
-            anon.set_password("anonymous_password_123")
+
+            anon.set_password(
+                "anonymous_password_123"
+            )
+
             db.session.add(anon)
             db.session.commit()
 
