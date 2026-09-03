@@ -812,7 +812,7 @@ const LandingPage = () => {
               <h4 className="text-sm font-semibold text-white mb-4">Links</h4>
               <ul className="space-y-2.5">
                 <li>
-                  <a href="https://github.com/Abhinav5656U/MeteroLens" target="_blank" rel="noopener noreferrer" className="text-sm text-white/50 hover:text-[#F4C10F] transition-colors flex items-center space-x-1.5">
+                  <a href="https://github.com/Mohammadsaif1915/TRUEMARK-AI" target="_blank" rel="noopener noreferrer" className="text-sm text-white/50 hover:text-[#F4C10F] transition-colors flex items-center space-x-1.5">
                     <FiGithub className="h-3.5 w-3.5" />
                     <span>GitHub</span>
                   </a>
