@@ -1382,7 +1382,7 @@ The software provides **AI-assisted decision support** and does not replace offi
 
 ---
 
-## © 2026 LegalMetrology-AI
+## © 2026 TrueMark
 
 **All Rights Reserved.**
 
