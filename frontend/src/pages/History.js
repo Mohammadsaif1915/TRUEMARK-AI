@@ -184,6 +184,7 @@ const History = () => {
                             {scan.latitude.toFixed(4)}, {scan.longitude.toFixed(4)}
                           </span>
                         )}
+                        {scan.city && <span className="inline-flex items-center gap-1"><FiMapPin className="h-3.5 w-3.5" />{scan.city}{scan.state ? `, ${scan.state}` : ''}</span>}
                       </div>
                     </div>
 

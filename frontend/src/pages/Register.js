@@ -82,6 +82,7 @@ const Register = () => {
     password: '',
     role: '',
     badge_number: '',
+    working_city: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -306,6 +307,11 @@ const Register = () => {
                   />
                 </div>
               </div>
+            </div>
+
+            <div>
+              <FieldLabel required>Working city</FieldLabel>
+              <input type="text" name="working_city" required value={formData.working_city} onChange={handleChange} className={fieldClasses} placeholder="e.g. Mumbai" />
             </div>
 
             <button

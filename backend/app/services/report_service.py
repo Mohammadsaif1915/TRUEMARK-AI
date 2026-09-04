@@ -1,4 +1,5 @@
 import os
+import hashlib
 from datetime import datetime, timezone
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -111,6 +112,10 @@ def generate_pdf_report(scan):
             ["Scan ID", str(scan.id)],
             ["Product Name", str(scan.product_name or "N/A")],
             ["Manufacturer", str(scan.manufacturer or "N/A")],
+            ["City", str(getattr(scan, "city", None) or "N/A")],
+            ["State / UT", str(scan.state or "N/A")],
+            ["Latitude", str(scan.latitude if scan.latitude is not None else "N/A")],
+            ["Longitude", str(scan.longitude if scan.longitude is not None else "N/A")],
         ]
         
         if scan.extracted_fields:
@@ -169,6 +174,16 @@ def generate_pdf_report(scan):
 
         compliance_result = scan.compliance_result or {}
         checks = compliance_result.get("checks", [])
+
+        confidence = compliance_result.get("confidence_assessment") or {}
+        if confidence:
+            elements.append(Paragraph("AI Analysis Confidence", heading_style))
+            confidence_text = (
+                f"Level: {confidence.get('level', 'N/A')} | "
+                f"System estimated score: {confidence.get('score', 'N/A')}% | "
+                f"{confidence.get('recommendation', '')}"
+            )
+            elements.append(Paragraph(confidence_text, body_style))
 
         if checks:
             header_row = ["Rule", "Status", "Severity", "Message"]
@@ -326,6 +341,10 @@ def generate_pdf_report(scan):
         
         elements.append(Spacer(1, 30))
         elements.append(Paragraph("___________________________", body_style))
+        signature_variant = int(hashlib.sha256(inspector_name.encode("utf-8")).hexdigest()[:2], 16) % 3
+        signature_marks = ["/", "~", "-"]
+        signature_mark = signature_marks[signature_variant] * (2 + signature_variant)
+        elements.append(Paragraph(f"<i>{signature_mark} {inspector_name}</i>", body_style))
         elements.append(Paragraph(f"Signature of {inspector_name}", body_style))
         elements.append(Paragraph(f"Date: {datetime.now(timezone.utc).strftime('%d %B %Y')}", body_style))
 

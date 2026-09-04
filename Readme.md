@@ -466,6 +466,10 @@ The database stores inspection-related information including:
 * Image hash
 * Scan timestamps
 * Inspection history
+* Inspector working city
+* Citizen shop and purchase address
+* Citizen report description and assignment status
+* Assigned inspector reference
 
 The `Scan` model contains structured JSON fields for:
 
@@ -522,6 +526,20 @@ Dashboard functionality includes areas such as:
 * 📈 Compliance trends
 
 This transforms individual scans into an **enforcement intelligence platform**.
+
+## Administrator Operations View
+
+Administrators can open the protected `/admin` page to monitor the inspector network using operational data only. It includes registered, active, and signed-out inspector counts; per-inspector inspection outcomes; working-city coverage; city-level activity; throughput charts; and citizen reports awaiting assignment.
+
+Inspector activity is updated through an authenticated heartbeat. A session is considered active only while its last heartbeat is recent, so closing a browser without signing out does not leave an inspector active indefinitely. The administrator response excludes passwords, email addresses, badges, OCR text, product evidence, and exact coordinates.
+
+## Citizen Reports and Assignment
+
+The public report form accepts product images, shop or seller name, complete purchase address, optional product name, an optional issue description, and device location when permission is granted. Administrators can review citizen submissions and assign them to registered inspectors using working-city information. Assigned reports appear in the inspector Dashboard and refresh while it remains open.
+
+## Location Metadata
+
+Inspector scans can include device latitude and longitude. The backend performs best-effort reverse geocoding to determine a city while preserving the original coordinates. Location metadata is shown in reports, History, India Map city summaries, and administrator city activity. If location permission or reverse geocoding is unavailable, the inspection remains usable and the location is shown as unavailable rather than invented.
 
 ---
 
@@ -705,7 +723,8 @@ LegalMetrology-AI/
 │       │   ├── auth.py
 │       │   ├── scan.py
 │       │   ├── dashboard.py
-│       │   └── history.py
+│       │   ├── history.py
+│       │   └── admin.py
 │       │
 │       ├── 📁 services/
 │       │   │
@@ -742,6 +761,7 @@ LegalMetrology-AI/
 │   ├── 📄 package.json
 │   ├── 📁 public/
 │   └── 📁 src/
+│       └── pages/AdminPage.js
 │
 ├── 📁 uploads/
 │
@@ -882,9 +902,12 @@ Current application routes include:
 POST   /api/auth/register
 POST   /api/auth/login
 GET    /api/auth/me
+POST   /api/auth/logout
+POST   /api/auth/heartbeat
 
 POST   /api/scan/upload
 POST   /api/scan/public-upload
+POST   /api/scan/fetch-url
 
 GET    /api/scan/<scan_id>
 GET    /api/scan/<scan_id>/report
@@ -898,6 +921,11 @@ GET    /api/dashboard/scans
 GET    /api/dashboard/alerts
 GET    /api/dashboard/leads
 GET    /api/dashboard/map
+GET    /api/dashboard/assigned-reports
+
+GET    /api/admin/overview
+GET    /api/admin/reports
+POST   /api/admin/reports/<scan_id>/assign
 
 GET    /api/scan/gtin/<gtin>/risk
 ```
@@ -920,6 +948,18 @@ CLOUDINARY_API_SECRET=<your-api-secret>
 ```
 
 > ⚠️ Never commit real API keys, database passwords, or cloud credentials to GitHub.
+
+## Demo Administrator Access
+
+For local hackathon/demo use, the backend bootstraps an administrator account automatically when it does not already exist:
+
+```text
+Email: admin@truemark.local
+Password: TrueMarkAdmin@2026
+Admin page: /admin
+```
+
+Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the environment before deployment to replace these development defaults. Do not use the defaults in production.
 
 ---
 

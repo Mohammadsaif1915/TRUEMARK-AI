@@ -20,6 +20,12 @@ def require_officer_or_admin():
     return user, None
 
 
+def scoped_query(user, query):
+    if user.role in {"administrator", "admin"}:
+        return query
+    return query.filter(Scan.user_id == user.id)
+
+
 @dashboard_bp.route("/stats", methods=["GET"])
 @jwt_required()
 def get_stats():
@@ -28,14 +34,15 @@ def get_stats():
         if error:
             return error
 
-        total_scans = Scan.query.count()
-        compliant = Scan.query.filter_by(overall_status="compliant").count()
-        non_compliant = Scan.query.filter_by(overall_status="non_compliant").count()
-        partially_compliant = Scan.query.filter_by(overall_status="partially_compliant").count()
+        scan_query = scoped_query(user, Scan.query)
+        total_scans = scan_query.count()
+        compliant = scan_query.filter(Scan.overall_status == "compliant").count()
+        non_compliant = scan_query.filter(Scan.overall_status == "non_compliant").count()
+        partially_compliant = scan_query.filter(Scan.overall_status == "partially_compliant").count()
 
         seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
         recent_scans = (
-            Scan.query.filter(Scan.created_at >= seven_days_ago)
+            scoped_query(user, Scan.query.filter(Scan.created_at >= seven_days_ago))
             .order_by(Scan.created_at.desc())
             .limit(10)
             .all()
@@ -55,9 +62,9 @@ def get_stats():
             })
 
         violation_rows = (
-            db.session.query(
+            scoped_query(user, db.session.query(
                 Scan.compliance_result,
-            )
+            ))
             .filter(Scan.compliance_result.isnot(None))
             .all()
         )
@@ -111,7 +118,7 @@ def get_all_scans():
         date_to = request.args.get("date_to")
         manufacturer = request.args.get("manufacturer")
 
-        query = Scan.query
+        query = scoped_query(user, Scan.query)
 
         if status:
             query = query.filter_by(overall_status=status)
@@ -159,6 +166,9 @@ def get_map_data():
         if error:
             return error
 
+        mine = request.args.get("mine", "false").lower() == "true"
+        map_filters = [Scan.user_id == user.id] if mine else []
+
         state_rows = (
             db.session.query(
                 Scan.state,
@@ -166,7 +176,7 @@ def get_map_data():
                 func.sum(db.case((Scan.overall_status == "compliant", 1), else_=0)).label("compliant"),
                 func.sum(db.case((Scan.overall_status == "non_compliant", 1), else_=0)).label("non_compliant"),
             )
-            .filter(Scan.state.isnot(None), Scan.state != "")
+            .filter(*map_filters, Scan.state.isnot(None), Scan.state != "")
             .group_by(Scan.state)
             .all()
         )
@@ -181,7 +191,29 @@ def get_map_data():
                 "violation_rate": round((row.non_compliant or 0) / row.total * 100, 1),
             })
 
-        return jsonify({"states": states}), 200
+        city_rows = (
+            db.session.query(
+                Scan.city,
+                Scan.state,
+                func.count(Scan.id).label("total"),
+                func.sum(db.case((Scan.overall_status == "compliant", 1), else_=0)).label("compliant"),
+                func.sum(db.case((Scan.overall_status == "non_compliant", 1), else_=0)).label("non_compliant"),
+            )
+            .filter(*map_filters, Scan.city.isnot(None), Scan.city != "")
+            .group_by(Scan.city, Scan.state)
+            .order_by(db.desc("total"))
+            .all()
+        )
+        cities = [{
+            "city": row.city,
+            "state": row.state,
+            "total": row.total,
+            "compliant": row.compliant or 0,
+            "non_compliant": row.non_compliant or 0,
+            "violation_rate": round((row.non_compliant or 0) / row.total * 100, 1),
+        } for row in city_rows]
+
+        return jsonify({"states": states, "cities": cities, "scope": "mine" if mine else "all"}), 200
 
     except Exception as e:
         return jsonify({"error": f"Failed to fetch map data: {str(e)}"}), 500
@@ -247,7 +279,7 @@ def get_citizen_leads():
         limit = request.args.get("limit", 50, type=int)
 
         leads = (
-            Scan.query
+            scoped_query(user, Scan.query)
             .filter_by(source="citizen")
             .filter(Scan.overall_status.in_(["non_compliant", "partially_compliant"]))
             .order_by(Scan.created_at.desc())
@@ -261,3 +293,11 @@ def get_citizen_leads():
 
     except Exception as e:
         return jsonify({"error": f"Failed to fetch leads: {str(e)}"}), 500
+
+
+@dashboard_bp.route("/assigned-reports", methods=["GET"])
+@jwt_required()
+def get_assigned_reports():
+    user_id = int(get_jwt_identity())
+    reports = Scan.query.filter_by(source="citizen", assigned_inspector_id=user_id).order_by(Scan.created_at.desc()).all()
+    return jsonify({"reports": [report.to_dict() for report in reports]}), 200

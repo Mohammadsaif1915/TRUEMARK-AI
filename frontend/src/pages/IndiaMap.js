@@ -171,71 +171,41 @@ const RiskGradientLegend = () => (
   </div>
 );
 
-/*
-  MOCK DATA \u2014 used only as a fallback when the API call fails or the
-  backend isn't running, so the page still previews with realistic
-  numbers. Remove MOCK_MAP_DATA / MOCK_ALERTS and the catch-block
-  fallback once the real endpoints are wired up everywhere.
-*/
-const MOCK_MAP_DATA = [
-  { state: 'Maharashtra', total: 412, non_compliant: 96, violation_rate: 23 },
-  { state: 'Uttar Pradesh', total: 388, non_compliant: 201, violation_rate: 52 },
-  { state: 'Delhi', total: 265, non_compliant: 71, violation_rate: 27 },
-  { state: 'Karnataka', total: 301, non_compliant: 34, violation_rate: 11 },
-  { state: 'Tamil Nadu', total: 274, non_compliant: 19, violation_rate: 7 },
-  { state: 'Gujarat', total: 246, non_compliant: 88, violation_rate: 36 },
-  { state: 'West Bengal', total: 198, non_compliant: 102, violation_rate: 51 },
-  { state: 'Rajasthan', total: 177, non_compliant: 61, violation_rate: 34 },
-  { state: 'Bihar', total: 143, non_compliant: 79, violation_rate: 55 },
-  { state: 'Madhya Pradesh', total: 165, non_compliant: 40, violation_rate: 24 },
-  { state: 'Punjab', total: 121, non_compliant: 9, violation_rate: 7 },
-  { state: 'Kerala', total: 158, non_compliant: 12, violation_rate: 8 },
-  { state: 'Telangana', total: 132, non_compliant: 28, violation_rate: 21 },
-  { state: 'Odisha', total: 96, non_compliant: 51, violation_rate: 53 },
-  { state: 'Haryana', total: 108, non_compliant: 22, violation_rate: 20 },
-  { state: 'Assam', total: 64, non_compliant: 8, violation_rate: 13 },
-  { state: 'Jharkhand', total: 71, non_compliant: 33, violation_rate: 46 },
-  { state: 'Jammu and Kashmir', total: 39, non_compliant: 4, violation_rate: 10 },
-];
-
-const MOCK_ALERTS = [
-  { gtin: '8901234567890', product_name: 'Premium Basmati Rice, 1kg', manufacturer: 'Agro Foods Pvt. Ltd.', total_scans: 14, fail_count: 11, risk_score: 79, last_seen: '2026-08-29T10:00:00Z' },
-  { gtin: '8904455667788', product_name: 'Cold-Pressed Mustard Oil, 1L', manufacturer: 'Sarson Naturals', total_scans: 9, fail_count: 7, risk_score: 68, last_seen: '2026-08-27T10:00:00Z' },
-  { gtin: '8909988776655', product_name: 'Instant Noodles Masala Pack', manufacturer: 'Tastee Foods Ltd.', total_scans: 11, fail_count: 6, risk_score: 55, last_seen: '2026-08-25T10:00:00Z' },
-  { gtin: '8901122334455', product_name: 'Toned Milk Powder, 500g', manufacturer: 'Dairy Best Co-op', total_scans: 8, fail_count: 4, risk_score: 47, last_seen: '2026-08-22T10:00:00Z' },
-  { gtin: '8905566778899', product_name: 'Herbal Shampoo, 340ml', manufacturer: 'GreenLeaf Cosmetics', total_scans: 6, fail_count: 2, risk_score: 29, last_seen: '2026-08-18T10:00:00Z' },
-  { gtin: '8902233445566', product_name: 'Whole Wheat Atta, 5kg', manufacturer: 'Anaaj Mills Pvt. Ltd.', total_scans: 5, fail_count: 1, risk_score: 18, last_seen: '2026-08-14T10:00:00Z' },
-];
-
 const IndiaMap = () => {
   const [mapData, setMapData] = useState([]);
+  const [cityData, setCityData] = useState([]);
+  const [selectedState, setSelectedState] = useState('');
+  const [mineOnly, setMineOnly] = useState(false);
   const [alerts, setAlerts] = useState([]);
   const [tooltipContent, setTooltipContent] = useState(null);
   const [tooltipPos, setTooltipPos] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [mapRes, alertRes] = await Promise.all([
-          api.get('/dashboard/map'),
+          api.get(`/dashboard/map?mine=${mineOnly}`),
           api.get('/dashboard/alerts'),
         ]);
         const states = mapRes.data.states || [];
+        setCityData(mapRes.data.cities || []);
         const fetchedAlerts = alertRes.data.alerts || [];
-        setMapData(states.length ? states : MOCK_MAP_DATA);
-        setAlerts(fetchedAlerts.length ? fetchedAlerts : MOCK_ALERTS);
+        setMapData(states);
+        setAlerts(fetchedAlerts);
+        setError(false);
       } catch (err) {
-        // Backend not reachable / not wired up yet \u2014 preview with mock data
-        // instead of showing an error screen.
-        setMapData(MOCK_MAP_DATA);
-        setAlerts(MOCK_ALERTS);
+        setMapData([]);
+        setCityData([]);
+        setAlerts([]);
+        setError(true);
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, []);
+  }, [mineOnly]);
 
   const stateDataMap = {};
   mapData.forEach((s) => {
@@ -245,6 +215,7 @@ const IndiaMap = () => {
   const totalScans = mapData.reduce((sum, s) => sum + s.total, 0);
   const totalNonCompliant = mapData.reduce((sum, s) => sum + s.non_compliant, 0);
   const statesCovered = mapData.length;
+  const visibleCities = cityData.filter((item) => !selectedState || normalizeName(item.state) === normalizeName(selectedState));
 
   const pageStyles = `
     @keyframes card-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -280,6 +251,17 @@ const IndiaMap = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-16 text-center">
+        <FiAlertTriangle className="h-10 w-10 text-amber-500 mx-auto mb-4" />
+        <h1 className="font-heading text-xl font-bold text-[#0A0A0A]">Map data unavailable</h1>
+        <p className="text-gray-500 mt-2">Recorded dashboard inspections could not be loaded.</p>
+        <button type="button" onClick={() => window.location.reload()} className="mt-5 px-4 py-2 bg-[#0A0A0A] text-[#F4C10F] rounded-sm text-sm font-semibold">Retry</button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
       <style>{pageStyles}</style>
@@ -287,6 +269,10 @@ const IndiaMap = () => {
       <div>
         <h1 className="font-heading text-3xl font-bold text-[#0A0A0A]">National Scan Intelligence</h1>
         <p className="text-gray-600 mt-1 font-heading italic">Geographic choropleth distribution of product scans and repeat-offender alerts.</p>
+        <div className="flex gap-2 mt-4" role="group" aria-label="Inspection scope">
+          <button type="button" onClick={() => { setMineOnly(false); setSelectedState(''); }} className={`px-3 py-2 text-sm font-semibold rounded-sm border ${!mineOnly ? 'bg-[#0A0A0A] text-[#F4C10F] border-[#0A0A0A]' : 'bg-white text-gray-600 border-gray-300'}`}>All inspections</button>
+          <button type="button" onClick={() => { setMineOnly(true); setSelectedState(''); }} className={`px-3 py-2 text-sm font-semibold rounded-sm border ${mineOnly ? 'bg-[#0A0A0A] text-[#F4C10F] border-[#0A0A0A]' : 'bg-white text-gray-600 border-gray-300'}`}>My inspections</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -361,6 +347,7 @@ const IndiaMap = () => {
                       onMouseLeave={() => {
                         setTooltipContent(null);
                       }}
+                      onClick={() => setSelectedState(stateName)}
                       style={{
                         default: {
                           fill: fillStyle,
@@ -390,6 +377,27 @@ const IndiaMap = () => {
         </div>
 
         <RiskGradientLegend />
+      </div>
+
+      <div className="bg-white rounded-sm border border-gray-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="font-heading text-lg font-bold text-[#0A0A0A] flex items-center space-x-2">
+              <FiMapPin className="h-5 w-5 text-[#F4C10F]" />
+              <span>City-wise inspection activity</span>
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">Select a state on the India map to filter its recorded cities.</p>
+          </div>
+          {selectedState && <button type="button" onClick={() => setSelectedState('')} className="text-sm font-semibold text-[#8A6A00]">Show all cities</button>}
+        </div>
+        {visibleCities.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">City</th><th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">State</th><th className="px-6 py-3 text-center text-xs font-semibold text-gray-500">Inspections</th><th className="px-6 py-3 text-center text-xs font-semibold text-gray-500">Compliant</th><th className="px-6 py-3 text-center text-xs font-semibold text-gray-500">Non-compliant</th><th className="px-6 py-3 text-center text-xs font-semibold text-gray-500">Violation rate</th></tr></thead>
+              <tbody className="divide-y divide-gray-100">{visibleCities.map((item) => <tr key={`${item.state}-${item.city}`} className="row-hover"><td className="px-6 py-4 text-sm font-semibold text-[#0A0A0A]">{item.city}</td><td className="px-6 py-4 text-sm text-gray-600">{item.state || 'Not captured'}</td><td className="px-6 py-4 text-center font-data text-sm">{item.total}</td><td className="px-6 py-4 text-center font-data text-sm text-emerald-700">{item.compliant}</td><td className="px-6 py-4 text-center font-data text-sm text-rose-700">{item.non_compliant}</td><td className="px-6 py-4 text-center font-data text-sm">{item.violation_rate}%</td></tr>)}</tbody>
+            </table>
+          </div>
+        ) : <div className="p-10 text-center text-sm text-gray-500">No city-level records have been captured yet.</div>}
       </div>
 
       <div className="bg-white rounded-sm border border-gray-200 overflow-hidden shadow-sm">

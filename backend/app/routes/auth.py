@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import (
     create_access_token,
@@ -53,6 +54,7 @@ def register():
             role=role,
             full_name=data.get("full_name", "").strip() or None,
             badge_number=data.get("badge_number", "").strip() or None,
+            working_city=data.get("working_city", "").strip() or None,
         )
         user.set_password(data["password"])
 
@@ -84,6 +86,11 @@ def login():
         if not user or not user.check_password(data["password"]):
             return jsonify({"error": "Invalid email or password"}), 401
 
+        user.is_active = True
+        user.last_login_at = datetime.now(timezone.utc)
+        user.last_seen_at = user.last_login_at
+        user.last_logout_at = None
+        db.session.commit()
         access_token = create_access_token(identity=str(user.id))
 
         return jsonify({
@@ -109,3 +116,33 @@ def get_current_user():
 
     except Exception as e:
         return jsonify({"error": f"Failed to fetch user: {str(e)}"}), 500
+
+
+@auth_bp.route("/logout", methods=["POST"])
+@jwt_required()
+def logout():
+    try:
+        user = User.query.get(int(get_jwt_identity()))
+        if user:
+            user.is_active = False
+            user.last_logout_at = datetime.now(timezone.utc)
+            db.session.commit()
+        return jsonify({"message": "Logout recorded"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Logout failed: {str(e)}"}), 500
+
+
+@auth_bp.route("/heartbeat", methods=["POST"])
+@jwt_required()
+def heartbeat():
+    try:
+        user = User.query.get(int(get_jwt_identity()))
+        if user:
+            user.is_active = True
+            user.last_seen_at = datetime.now(timezone.utc)
+            db.session.commit()
+        return jsonify({"message": "Activity recorded"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Activity update failed: {str(e)}"}), 500

@@ -234,6 +234,41 @@ const RiskBadge = ({ riskData }) => {
   );
 };
 
+const ConfidenceCard = ({ assessment }) => {
+  if (!assessment) return null;
+  const level = assessment.level || 'LOW';
+  const styles = {
+    HIGH: { icon: FiCheckCircle, border: 'border-emerald-200', bg: 'bg-emerald-50', text: 'text-emerald-800', message: 'AI analysis appears reliable. No immediate manual review is required.' },
+    MEDIUM: { icon: FiAlertTriangle, border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-800', message: 'Some extracted information may require inspector verification.' },
+    LOW: { icon: FiXCircle, border: 'border-rose-200', bg: 'bg-rose-50', text: 'text-rose-800', message: 'AI could not reliably determine compliance. Inspector verification is required.' },
+  };
+  const style = styles[level] || styles.LOW;
+  const Icon = style.icon;
+  const requiresReview = level !== 'HIGH';
+
+  return (
+    <div className={`rounded-2xl border ${style.border} ${style.bg} p-5`} aria-labelledby="confidence-heading">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start space-x-3">
+          <Icon className={`h-5 w-5 mt-0.5 ${style.text}`} aria-hidden="true" />
+          <div>
+            <h3 id="confidence-heading" className={`text-base font-bold ${style.text}`}>AI Analysis Confidence</h3>
+            <p className={`text-xs font-semibold uppercase tracking-wider mt-1 ${style.text}`}>
+              {level}{requiresReview ? ` - ${level === 'LOW' ? 'Manual review required' : 'Review recommended'}` : ''}
+            </p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className={`font-data text-xl font-bold ${style.text}`}>{assessment.score}%</p>
+          <p className="text-[11px] text-slate-500">system estimate</p>
+        </div>
+      </div>
+      <p className="text-sm text-slate-700 mt-4">{assessment.recommendation || style.message}</p>
+      <p className="text-[11px] text-slate-500 mt-3">{assessment.disclaimer}</p>
+    </div>
+  );
+};
+
 const MismatchCard = ({ mismatch }) => {
   if (!mismatch || mismatch.status === 'skipped' || mismatch.status === 'error') return null;
 
@@ -311,6 +346,7 @@ const ScanResult = () => {
     fetchScan();
   }, [id, navigate]);
 
+
   const handleImageLoad = useCallback(() => {
     const img = imgRef.current;
     if (img) {
@@ -353,9 +389,11 @@ const ScanResult = () => {
   const checks = scan.compliance_result?.checks || [];
   const ruleVersion = scan.compliance_result?.rule_version_applied || 'Base Rules';
   const mismatch = scan.mismatch_result;
+  const confidenceAssessment = scan.compliance_result?.confidence_assessment;
   const overallStatus = scan.overall_status || scan.status || 'unknown';
   const imageUrl = scan.image_url || (scan.image_path ? `${API_BASE_URL}/uploads/${scan.image_path.split(/[\\/]/).pop()}` : null);
-  const extractedData = scan.extracted_data || scan.ocr_extracted_data || null;
+  const cityLabel = scan.city || 'City not captured';
+  const extractedData = scan.ocr_regions || scan.extracted_data || scan.ocr_extracted_data || null;
   const hasBboxData = extractedData && extractedData.length > 0 && extractedData.some(d => d.bbox);
 
   const passedCount = checks.filter(c => c.status === 'pass').length;
@@ -579,6 +617,10 @@ const ScanResult = () => {
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Manufacturer</p>
                 <p className="text-sm text-slate-700 mt-0.5">{scan.manufacturer || 'Not detected'}</p>
               </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Inspection location</p>
+                <p className="text-sm text-slate-700 mt-0.5">{cityLabel}{scan.state ? `, ${scan.state}` : ''}</p>
+              </div>
               {scan.gtin && (
                 <div>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">GTIN</p>
@@ -602,6 +644,9 @@ const ScanResult = () => {
 
             {/* GTIN Risk Badge */}
             <RiskBadge riskData={riskData} />
+
+            <ConfidenceCard assessment={confidenceAssessment} />
+
           </div>
 
           {/* Right Column — 3/5 width */}
@@ -625,6 +670,7 @@ const ScanResult = () => {
                       <tr className="border-b border-slate-100">
                         <th className="text-left px-6 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Legal Rule & Citation</th>
                         <th className="text-left px-6 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                        <th className="text-left px-6 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Confidence</th>
                         <th className="text-left px-6 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Extracted Evidence</th>
                       </tr>
                     </thead>
@@ -637,6 +683,16 @@ const ScanResult = () => {
                           </td>
                           <td className="px-6 py-4">
                             <StatusChip status={check.status} />
+                          </td>
+                          <td className="px-6 py-4">
+                            {check.confidence ? (
+                              <div>
+                                <p className="text-xs font-bold text-slate-700">{check.confidence.level}</p>
+                                <p className="text-[11px] text-slate-500">{check.confidence.score}% estimated</p>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400">Not available</span>
+                            )}
                           </td>
                           <td className="px-6 py-4">
                             <p className="text-sm text-slate-600 leading-relaxed">{check.message}</p>
@@ -654,8 +710,65 @@ const ScanResult = () => {
               )}
             </div>
 
+            {/* Evidence Intelligence: derived only from existing rule checks and OCR evidence. */}
+            {checks.filter((check) => check.status !== 'pass').length > 0 && (
+              <div className="bg-white rounded-2xl border border-rose-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-rose-100 bg-rose-50">
+                  <div className="flex items-center space-x-2">
+                    <FiEye className="h-5 w-5 text-rose-600" />
+                    <div>
+                      <h3 className="text-base font-bold text-rose-900">Evidence Intelligence</h3>
+                      <p className="text-xs text-rose-700 mt-0.5">AI-assisted findings for inspector review</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 space-y-6">
+                  {checks.filter((check) => check.status !== 'pass').map((check, index) => {
+                    const confidence = scan.extracted_fields?.confidence_score;
+                    const isFailure = check.status === 'fail' || check.status === 'likely_violation';
+                    return (
+                      <article key={`${check.rule_name}-${index}`} className="border-b border-slate-100 last:border-b-0 last:pb-0 pb-6">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-xs font-bold text-rose-600 uppercase tracking-wider">{isFailure ? 'Violation detected' : 'Review recommended'}</p>
+                            <h4 className="text-sm font-bold text-slate-900 mt-1">{check.rule_name || 'Compliance finding'}</h4>
+                          </div>
+                          <StatusChip status={check.status} />
+                        </div>
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3 mt-4 text-sm">
+                          <div><dt className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Requirement</dt><dd className="text-slate-700 mt-1">{check.citation || 'Configured compliance requirement'}</dd></div>
+                          <div><dt className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Detected value</dt><dd className="text-slate-700 mt-1">{check.message || 'Not detected'}</dd></div>
+                          <div><dt className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Expected requirement</dt><dd className="text-slate-700 mt-1">{check.error_msg || 'See the cited configured rule'}</dd></div>
+                          <div><dt className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Confidence</dt><dd className="text-slate-700 mt-1">{typeof confidence === 'number' ? `${confidence}% (existing AI extraction)` : 'Not available from the existing pipeline'}</dd></div>
+                        </dl>
+                        <div className="mt-5">
+                          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Reason</p>
+                          <p className="text-sm text-slate-600 leading-relaxed">{check.message || 'The configured compliance rule did not pass.'}</p>
+                        </div>
+                        <div className="mt-5">
+                          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Supporting evidence</p>
+                          {imageUrl ? (
+                            <div className="relative bg-slate-50 rounded-lg overflow-hidden border border-slate-200">
+                              <img src={imageUrl} alt={`Evidence for ${check.rule_name || 'compliance finding'}`} className="w-full max-h-72 object-contain" />
+                              {hasBboxData && showBboxes && (
+                                <BboxOverlay extractedData={extractedData} imgNaturalWidth={imgDims.natW} imgNaturalHeight={imgDims.natH} displayWidth={imgDims.dispW} displayHeight={imgDims.dispH} checks={checks} />
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-slate-500">Original product image is unavailable.</p>
+                          )}
+                          <p className="text-xs text-slate-500 mt-2">{hasBboxData ? 'Region evidence uses OCR coordinates from the existing pipeline.' : 'No reliable OCR region is available for this finding; the original image is shown.'}</p>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Mismatch Card */}
             <MismatchCard mismatch={mismatch} />
+
           </div>
         </div>
       </div>

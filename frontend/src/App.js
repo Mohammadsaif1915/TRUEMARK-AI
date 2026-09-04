@@ -15,6 +15,7 @@ import Dashboard from './pages/Dashboard';
 import History from './pages/History';
 import IndiaMap from './pages/IndiaMap';
 import CitizenReport from './pages/CitizenReport';
+import AdminPage from './pages/AdminPage';
 
 const App = () => {
   return (
@@ -76,6 +77,15 @@ const App = () => {
                 <ProtectedRoute>
                   <Navbar />
                   <main><History /></main>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <Navbar />
+                  <main><AdminPage /></main>
                 </ProtectedRoute>
               }
             />

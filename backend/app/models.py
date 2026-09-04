@@ -35,11 +35,16 @@ class User(db.Model):
     role = db.Column(db.String(30), nullable=False, default="inspector")
     full_name = db.Column(db.String(150), nullable=True)
     badge_number = db.Column(db.String(50), nullable=True)
+    working_city = db.Column(db.String(100), nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=False)
+    last_login_at = db.Column(db.DateTime, nullable=True)
+    last_logout_at = db.Column(db.DateTime, nullable=True)
+    last_seen_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
-    scans = db.relationship("Scan", backref="user", lazy=True)
+    scans = db.relationship("Scan", backref="user", lazy=True, foreign_keys="Scan.user_id")
 
     def set_password(self, password):
         self.password_hash = bcrypt.hashpw(
@@ -64,6 +69,11 @@ class User(db.Model):
             "role_display_name": self.role_display_name,
             "full_name": self.full_name,
             "badge_number": self.badge_number,
+            "working_city": self.working_city,
+            "is_active": self.is_active,
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
+            "last_logout_at": self.last_logout_at.isoformat() if self.last_logout_at else None,
+            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
             "created_at": self.created_at.isoformat(),
         }
 
@@ -82,11 +92,19 @@ class Scan(db.Model):
     manufacturer = db.Column(db.String(200), nullable=True)
     gtin = db.Column(db.String(50), nullable=True)
     state = db.Column(db.String(100), nullable=True)
+    city = db.Column(db.String(100), nullable=True)
+    ocr_regions = db.Column(db.JSON, nullable=True)
     source = db.Column(db.String(50), nullable=False, default="official")
     latitude = db.Column(db.Float, nullable=True)
     longitude = db.Column(db.Float, nullable=True)
     mismatch_result = db.Column(db.JSON, nullable=True)
     image_hash = db.Column(db.String(64), nullable=True)
+    shop_name = db.Column(db.String(200), nullable=True)
+    purchase_address = db.Column(db.Text, nullable=True)
+    report_description = db.Column(db.Text, nullable=True)
+    assigned_inspector_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    report_status = db.Column(db.String(30), nullable=True)
+    analysis_image_path = db.Column(db.String(500), nullable=True)
     created_at = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -109,10 +127,18 @@ class Scan(db.Model):
             "manufacturer": self.manufacturer,
             "gtin": self.gtin,
             "state": self.state,
+            "city": self.city,
+            "ocr_regions": self.ocr_regions,
             "source": self.source,
             "latitude": self.latitude,
             "longitude": self.longitude,
             "mismatch_result": self.mismatch_result,
             "image_hash": self.image_hash,
+            "shop_name": self.shop_name,
+            "purchase_address": self.purchase_address,
+            "report_description": self.report_description,
+            "assigned_inspector_id": self.assigned_inspector_id,
+            "report_status": self.report_status,
+            "analysis_image_path": self.analysis_image_path,
             "created_at": self.created_at.isoformat(),
         }

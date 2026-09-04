@@ -30,6 +30,14 @@ export const AuthProvider = ({ children }) => {
     loadUser();
   }, []);
 
+  useEffect(() => {
+    if (!token) return undefined;
+    const heartbeat = () => api.post('/auth/heartbeat').catch(() => {});
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 30000);
+    return () => window.clearInterval(timer);
+  }, [token]);
+
   const login = async (email, password) => {
     const response = await api.post('/auth/login', { email, password });
     const { access_token, user: userData } = response.data;
@@ -45,7 +53,12 @@ export const AuthProvider = ({ children }) => {
     return response.data;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      if (localStorage.getItem('token')) await api.post('/auth/logout');
+    } catch (err) {
+      // Clear the local session even if the server is unavailable.
+    }
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setToken(null);

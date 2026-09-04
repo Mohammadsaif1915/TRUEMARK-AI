@@ -5,6 +5,86 @@ import re
 from app.services.llm_judge_service import evaluate_rule
 RULES_FILE = os.path.join(os.path.dirname(__file__), "..", "rules", "rules_2026_amend_3.json")
 
+
+def _confidence_level(score):
+    if score >= 80:
+        return "HIGH"
+    if score >= 50:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _assess_confidence(pipeline_data, extracted_fields, checks):
+    """Estimate extraction reliability from signals already produced by the pipeline."""
+    extracted_data = pipeline_data.get("extracted_data", []) if pipeline_data else []
+    llm_data = pipeline_data.get("llm_extracted_data", {}) if pipeline_data else {}
+    ocr_scores = [
+        float(item.get("confidence"))
+        for item in extracted_data
+        if isinstance(item.get("confidence"), (int, float))
+    ]
+    ocr_signal = sum(ocr_scores) / len(ocr_scores) if ocr_scores else 0.0
+    ai_value = llm_data.get("confidence_score")
+    ai_signal = None
+    if isinstance(ai_value, (int, float)) and ai_value > 0:
+        ai_signal = max(0.0, min(1.0, float(ai_value) / 100.0))
+
+    required_fields = (
+        "mrp", "net_quantity", "manufacturer", "consumer_care",
+        "manufacturing_date", "batch_number", "country_of_origin",
+    )
+    available = sum(bool(llm_data.get(field) or extracted_fields.get(field)) for field in required_fields)
+    completeness_signal = available / len(required_fields)
+    conclusive = sum(item.get("status") in {"pass", "fail", "likely_violation"} for item in checks)
+    resolution_signal = conclusive / len(checks) if checks else 0.0
+
+    if ai_signal is not None:
+        score = (ai_signal * 0.35) + (ocr_signal * 0.30) + (completeness_signal * 0.20) + (resolution_signal * 0.15)
+        sources = ["existing extraction confidence", "OCR token confidence", "field completeness", "rule resolution"]
+    else:
+        score = (ocr_signal * 0.40) + (completeness_signal * 0.35) + (resolution_signal * 0.25)
+        sources = ["OCR token confidence", "field completeness", "rule resolution"]
+
+    if not extracted_data and not ai_signal:
+        score = 0.0
+    score = round(max(0.0, min(1.0, score)) * 100, 1)
+    level = _confidence_level(score)
+    recommendation = {
+        "HIGH": "AI analysis appears reliable. No immediate manual review is required.",
+        "MEDIUM": "Some extracted information may require inspector verification.",
+        "LOW": "AI could not reliably determine compliance. Inspector verification is required.",
+    }[level]
+    return {
+        "score": score,
+        "level": level,
+        "recommendation": recommendation,
+        "label": "System Estimated Confidence",
+        "sources": sources,
+        "disclaimer": "This estimates reliability of the current extraction and rule signals. It is not a calibrated probability or legal conclusion.",
+    }
+
+
+def _add_check_confidence(checks, assessment, pipeline_data):
+    extracted_data = pipeline_data.get("extracted_data", []) if pipeline_data else []
+    ocr_scores = [
+        float(item.get("confidence"))
+        for item in extracted_data
+        if isinstance(item.get("confidence"), (int, float))
+    ]
+    default_score = assessment["score"]
+    for check in checks:
+        status = check.get("status")
+        score = default_score
+        if status in {"human_review_required", "likely_violation"}:
+            score = min(score, 65.0)
+        if status == "fail" and not ocr_scores:
+            score = min(score, 49.0)
+        check["confidence"] = {
+            "score": round(score, 1),
+            "level": _confidence_level(score),
+            "label": "System Estimated Confidence",
+        }
+
 def load_rules():
     with open(RULES_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -18,8 +98,10 @@ def validate_compliance(pipeline_data, extracted_fields=None):
         extracted_fields = {}
 
     if not pipeline_data or not pipeline_data.get("extracted_data"):
+        assessment = _assess_confidence(pipeline_data or {}, extracted_fields, [])
         return {
             "overall_status": "non_compliant",
+            "confidence_assessment": assessment,
             "checks": [
                 {
                     "rule_name": "OCR Text Extraction",
@@ -27,6 +109,11 @@ def validate_compliance(pipeline_data, extracted_fields=None):
                     "message": "No text could be extracted from the image.",
                     "citation": "System",
                     "severity": "critical",
+                    "confidence": {
+                        "score": assessment["score"],
+                        "level": assessment["level"],
+                        "label": "System Estimated Confidence",
+                    },
                 }
             ],
         }
@@ -221,8 +308,12 @@ def validate_compliance(pipeline_data, extracted_fields=None):
         if llm_data.get("confidence_score", 100) < 80:
             overall_status = "manual_review"
 
+    confidence_assessment = _assess_confidence(pipeline_data, extracted_fields, checks)
+    _add_check_confidence(checks, confidence_assessment, pipeline_data)
+
     return {
         "overall_status": overall_status,
         "rule_version_applied": rules_def["version"],
+        "confidence_assessment": confidence_assessment,
         "checks": checks,
     }

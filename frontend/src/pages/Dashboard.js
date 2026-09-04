@@ -101,6 +101,7 @@ const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [scans, setScans] = useState([]);
   const [leads, setLeads] = useState([]);
+  const [assignedReports, setAssignedReports] = useState([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -148,14 +149,28 @@ const Dashboard = () => {
     }
   }, []);
 
+  const fetchAssignedReports = useCallback(async () => {
+    try {
+      const response = await api.get('/dashboard/assigned-reports');
+      setAssignedReports(response.data.reports || []);
+    } catch (err) {
+      setAssignedReports([]);
+    }
+  }, []);
+
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
-      await Promise.all([fetchStats(), fetchScans(), fetchLeads()]);
+      await Promise.all([fetchStats(), fetchScans(), fetchLeads(), fetchAssignedReports()]);
       setLoading(false);
     };
     loadAll();
-  }, [fetchStats, fetchScans, fetchLeads]);
+  }, [fetchStats, fetchScans, fetchLeads, fetchAssignedReports]);
+
+  useEffect(() => {
+    const timer = window.setInterval(fetchAssignedReports, 15000);
+    return () => window.clearInterval(timer);
+  }, [fetchAssignedReports]);
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -181,7 +196,7 @@ const Dashboard = () => {
     count: v.count,
   }));
 
-  const hasNoScans = !stats || stats.total_scans === 0;
+  const hasNoScans = !stats || (stats.total_scans === 0 && assignedReports.length === 0);
 
   const statCards = [
     {
@@ -278,6 +293,19 @@ const Dashboard = () => {
             </div>
           )}
         </div>
+        <div className="flex items-center justify-between gap-3 mb-6 px-4 py-3 bg-indigo-50 border border-indigo-200 rounded-sm">
+          <div>
+            <p className="text-sm font-semibold text-indigo-950">Assigned citizen reports</p>
+            <p className="text-xs text-indigo-700 mt-0.5">Reports routed to you by an administrator.</p>
+          </div>
+          <a href="#assigned-reports" className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-700 text-white rounded-sm text-sm font-semibold hover:bg-indigo-800">
+            <FiEye className="h-4 w-4" /> View assigned reports <span className="font-data">{assignedReports.length}</span>
+          </a>
+        </div>
+        <div id="assigned-reports" className="bg-white rounded-sm shadow-sm border border-indigo-200 overflow-hidden mb-8">
+          <div className="p-6 border-b border-indigo-100 bg-indigo-50"><h3 className="font-heading text-lg font-semibold text-indigo-950">Assigned citizen reports</h3><p className="text-sm text-indigo-700 mt-1">Reports routed to you by an administrator.</p></div>
+          {assignedReports.length > 0 ? <div className="divide-y divide-gray-100">{assignedReports.map((report) => <div key={report.id} className="p-5 flex flex-col sm:flex-row sm:items-center gap-4"><img src={report.image_url || '/logo.png'} alt="Citizen report" className="h-16 w-16 rounded-lg object-cover border border-slate-200" /><div className="flex-1"><p className="font-semibold text-[#0A0A0A]">{report.product_name || 'Product not named'}</p><p className="text-sm text-gray-600 mt-1">{report.shop_name || 'Shop not provided'} · {report.city || report.state || 'Location not captured'}</p><p className="text-xs text-gray-500 mt-1">{report.purchase_address || 'Address not provided'}</p></div><Link to={`/scan/${report.id}`} className="view-link inline-flex items-center space-x-1 text-sm text-[#0A0A0A] font-medium"><FiEye className="h-4 w-4" /><span>Review</span><FiArrowUpRight className="arrow-icon h-3.5 w-3.5" /></Link></div>)}</div> : <div className="p-8 text-center text-sm text-gray-500">No reports are assigned to you yet.</div>}
+        </div>
         <div className="bg-white rounded-sm shadow-sm border border-gray-200 p-16 text-center">
           <FiFileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <h2 className="font-heading text-xl font-semibold text-[#0A0A0A] mb-2">No scans yet</h2>
@@ -310,6 +338,23 @@ const Dashboard = () => {
             <span className="text-sm text-[#0A0A0A] font-bold">{user.role_display_name || user.role}</span>
           </div>
         )}
+      </div>
+      <div className="flex items-center justify-between gap-3 mb-6 px-4 py-3 bg-indigo-50 border border-indigo-200 rounded-sm">
+        <div>
+          <p className="text-sm font-semibold text-indigo-950">Assigned citizen reports</p>
+          <p className="text-xs text-indigo-700 mt-0.5">Reports routed to you by an administrator.</p>
+        </div>
+        <a href="#assigned-reports" className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-700 text-white rounded-sm text-sm font-semibold hover:bg-indigo-800">
+          <FiEye className="h-4 w-4" /> View assigned reports <span className="font-data">{assignedReports.length}</span>
+        </a>
+      </div>
+      <div className="flex flex-wrap gap-3 mb-6">
+        <Link to="/map" className="sweep-btn sweep-btn--dark inline-flex items-center px-4 py-2 rounded-sm text-sm font-semibold">
+          <FiEye className="h-4 w-4 mr-2" /> View live map data
+        </Link>
+        <Link to="/history" className="sweep-btn inline-flex items-center px-4 py-2 rounded-sm text-sm font-semibold">
+          <FiFileText className="h-4 w-4 mr-2" /> View inspection history
+        </Link>
       </div>
 
       {/* ─── Stat cards ─── */}
@@ -407,6 +452,11 @@ const Dashboard = () => {
             <EmptyChart message="No violations recorded yet" />
           )}
         </div>
+      </div>
+
+      <div id="assigned-reports" className="bg-white rounded-sm shadow-sm border border-indigo-200 overflow-hidden mb-8">
+          <div className="p-6 border-b border-indigo-100 bg-indigo-50"><h3 className="font-heading text-lg font-semibold text-indigo-950">Assigned citizen reports</h3><p className="text-sm text-indigo-700 mt-1">Reports routed to you by an administrator.</p></div>
+          {assignedReports.length > 0 ? <div className="divide-y divide-gray-100">{assignedReports.map((report) => <div key={report.id} className="p-5 flex flex-col sm:flex-row sm:items-center gap-4"><img src={report.image_url || '/logo.png'} alt="Citizen report" className="h-16 w-16 rounded-lg object-cover border border-slate-200" /><div className="flex-1"><p className="font-semibold text-[#0A0A0A]">{report.product_name || 'Product not named'}</p><p className="text-sm text-gray-600 mt-1">{report.shop_name || 'Shop not provided'} · {report.city || report.state || 'Location not captured'}</p><p className="text-xs text-gray-500 mt-1">{report.purchase_address || 'Address not provided'}</p></div><Link to={`/scan/${report.id}`} className="view-link inline-flex items-center space-x-1 text-sm text-[#0A0A0A] font-medium"><FiEye className="h-4 w-4" /><span>Review</span><FiArrowUpRight className="arrow-icon h-3.5 w-3.5" /></Link></div>)}</div> : <div className="p-8 text-center text-sm text-gray-500">No reports are assigned to you yet.</div>}
       </div>
 
       {/* ─── Recent scans table ─── */}

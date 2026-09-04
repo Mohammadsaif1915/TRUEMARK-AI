@@ -85,6 +85,7 @@ def create_app(config_name=None):
     from app.routes.scan import scan_bp
     from app.routes.dashboard import dashboard_bp
     from app.routes.history import history_bp
+    from app.routes.admin import admin_bp
 
     app.register_blueprint(
         auth_bp,
@@ -104,6 +105,11 @@ def create_app(config_name=None):
     app.register_blueprint(
         history_bp,
         url_prefix="/api/history"
+    )
+
+    app.register_blueprint(
+        admin_bp,
+        url_prefix="/api/admin"
     )
 
     # Serve uploaded files
@@ -138,6 +144,21 @@ def create_app(config_name=None):
             )
 
             db.session.add(anon)
+            db.session.commit()
+
+        # Fixed development administrator for hackathon/demo access.
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@truemark.local").strip().lower()
+        admin_password = os.getenv("ADMIN_PASSWORD", "TrueMarkAdmin@2026")
+        admin = User.query.filter_by(email=admin_email).first()
+        if not admin:
+            admin = User(
+                username="truemark_admin",
+                email=admin_email,
+                role="administrator",
+                full_name="TrueMark Administrator",
+            )
+            admin.set_password(admin_password)
+            db.session.add(admin)
             db.session.commit()
 
     return app

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { FiUpload, FiX, FiCamera, FiMapPin, FiCheckCircle } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import api from '../utils/api';
@@ -7,12 +8,28 @@ const CitizenReport = () => {
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [gtin, setGtin] = useState('');
+  const [shopName, setShopName] = useState('');
+  const [purchaseAddress, setPurchaseAddress] = useState('');
+  const [productName, setProductName] = useState('');
+  const [reportDescription, setReportDescription] = useState('');
   const [location, setLocation] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
   
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
+
+  const captureLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Location is not supported by this browser');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+      () => toast.error('Unable to capture location. Please allow location access.'),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -70,6 +87,10 @@ const CitizenReport = () => {
     });
     
     if (gtin) formData.append('gtin', gtin);
+    formData.append('shop_name', shopName);
+    formData.append('purchase_address', purchaseAddress);
+    formData.append('product_name', productName);
+    formData.append('report_description', reportDescription);
     
     if (location) {
       formData.append('latitude', location.latitude);
@@ -113,10 +134,22 @@ const CitizenReport = () => {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <div className="text-center mb-8">
+        <div className="flex justify-center gap-4 mb-5">
+          <Link to="/login" className="inline-flex items-center text-sm font-medium text-primary-800 hover:text-primary-900 transition-colors">
+            <span aria-hidden="true" className="mr-2">&larr;</span>
+            Back to login
+          </Link>
+          <Link to="/" className="inline-flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
+            Back to landing page
+          </Link>
+        </div>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Report a Product Violation</h1>
         <p className="text-gray-600">
           Upload clear photos of the product label (showing MRP, net quantity, manufacturer details) to report suspected non-compliance.
         </p>
+              <button type="button" onClick={captureLocation} className="mt-3 px-3 py-2 bg-blue-700 text-white rounded-lg text-xs font-semibold">
+                {location ? 'Refresh GPS location' : 'Use my GPS location'}
+              </button>
       </div>
 
       <div className="bg-white rounded-3xl shadow-soft p-6 md:p-8">
@@ -182,6 +215,26 @@ const CitizenReport = () => {
           </div>
 
           <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">Shop / seller name <span className="text-red-500">*</span></label>
+            <input required type="text" value={shopName} onChange={(e) => setShopName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-800 outline-none" placeholder="Shop where you purchased the product" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">Shop address <span className="text-red-500">*</span></label>
+            <textarea required rows="3" value={purchaseAddress} onChange={(e) => setPurchaseAddress(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-800 outline-none" placeholder="Complete shop address" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">Product name (optional)</label>
+            <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-800 outline-none" placeholder="Name of the product" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">What would you like to report?</label>
+            <textarea rows="3" value={reportDescription} onChange={(e) => setReportDescription(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary-800 outline-none" placeholder="Describe the suspected issue (optional)" />
+          </div>
+
+          <div>
             <label className="block text-sm font-semibold text-gray-900 mb-2">
               Barcode / GTIN (Optional)
             </label>
@@ -203,6 +256,7 @@ const CitizenReport = () => {
                   ? "Your current location will be attached to help inspectors locate the product." 
                   : "We couldn't get your location automatically. It helps if you enable location services."}
               </p>
+              <button type="button" onClick={captureLocation} className="mt-3 px-3 py-2 bg-blue-700 text-white rounded-lg text-xs font-semibold">{location ? 'Refresh GPS location' : 'Use my GPS location'}</button>
             </div>
           </div>
 

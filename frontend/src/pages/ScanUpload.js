@@ -92,18 +92,94 @@ const BarcodeScanner = ({ onScan, onClose }) => {
   );
 };
 
+const PhotoCamera = ({ onCapture, onClose }) => {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Camera access is not supported in this browser. Use Upload Files instead.');
+      return () => { active = false; };
+    }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+      .then((stream) => {
+        if (!active) return stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      })
+      .catch(() => setError('Camera access was denied or is unavailable. Use Upload Files instead.'));
+    return () => {
+      active = false;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  const capture = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (blob) onCapture(new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+    }, 'image/jpeg', 0.92);
+  };
+
+  return (
+    <div className="tm-anim-backdrop fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-4">
+      <div className="tm-anim-modal bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <h3 className="font-bold text-slate-900 flex items-center gap-2"><FiCamera className="h-5 w-5 text-indigo-600" />Take product photo</h3>
+          <button onClick={onClose} aria-label="Close camera" className="p-2 text-slate-400 hover:text-slate-700"><FiX /></button>
+        </div>
+        <div className="p-4">
+          {error ? <p className="text-sm text-rose-700 bg-rose-50 p-3 rounded-lg">{error}</p> : <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video object-cover rounded-xl bg-slate-900" />}
+          <div className="flex justify-end gap-3 mt-4">
+            <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-300 rounded-lg">Cancel</button>
+            {!error && <button onClick={capture} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg"><FiCamera className="inline mr-2" />Capture photo</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ScanUpload = () => {
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [listingUrl, setListingUrl] = useState('');
   const [gtin, setGtin] = useState('');
   const [state, setState] = useState('');
+  const [city, setCity] = useState('');
+  const [deviceLocation, setDeviceLocation] = useState(null);
+  const [locationStatus, setLocationStatus] = useState('Requesting device location...');
+  const [showCamera, setShowCamera] = useState(false);
+  const [urlData, setUrlData] = useState(null);
+  const [fetchingUrl, setFetchingUrl] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationStatus('Device location is not supported by this browser.');
+      return undefined;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDeviceLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setLocationStatus('Device location captured. City will be resolved during upload.');
+      },
+      () => setLocationStatus('Location permission was not granted. The inspection can still be uploaded.'),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+    );
+    return undefined;
+  }, []);
 
   const handleFiles = (selectedFiles) => {
     if (!selectedFiles || selectedFiles.length === 0) return;
@@ -134,6 +210,26 @@ const ScanUpload = () => {
     setGtin(decodedText);
     setShowScanner(false);
     toast.success(`Barcode detected: ${decodedText}`);
+  };
+
+  const handleCameraCapture = (file) => {
+    handleFiles([file]);
+    setShowCamera(false);
+  };
+
+  const fetchProductUrl = async () => {
+    if (!listingUrl) return;
+    setFetchingUrl(true);
+    try {
+      const response = await api.post('/scan/fetch-url', { url: listingUrl });
+      setUrlData(response.data.product || null);
+      toast.success('Product details fetched');
+    } catch (err) {
+      setUrlData(null);
+      toast.error(err.response?.data?.error || 'Could not fetch product details');
+    } finally {
+      setFetchingUrl(false);
+    }
   };
 
   const handleDragOver = (e) => {
@@ -167,6 +263,11 @@ const ScanUpload = () => {
       if (listingUrl) formData.append('listing_url', listingUrl);
       if (gtin) formData.append('gtin', gtin);
       if (state) formData.append('state', state);
+      if (city) formData.append('city', city);
+      if (deviceLocation) {
+        formData.append('latitude', deviceLocation.latitude);
+        formData.append('longitude', deviceLocation.longitude);
+      }
 
       const response = await api.post('/scan/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -232,6 +333,7 @@ const ScanUpload = () => {
           onClose={() => setShowScanner(false)}
         />
       )}
+      {showCamera && <PhotoCamera onCapture={handleCameraCapture} onClose={() => setShowCamera(false)} />}
 
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="mb-8 flex items-start gap-3">
@@ -249,21 +351,13 @@ const ScanUpload = () => {
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={() => setShowCamera(true)}
                 className="group border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition-all duration-200"
               >
                 <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
                   <FiCamera className="h-6 w-6" />
                 </div>
                 <p className="text-md font-medium text-slate-900">Take Photo</p>
-                <input
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => handleFiles(e.target.files)}
-                  className="hidden"
-                />
               </div>
               <div
                 onClick={() => galleryInputRef.current?.click()}
@@ -327,7 +421,9 @@ const ScanUpload = () => {
                   placeholder="https://amazon.in/dp/..."
                   className="pl-10 w-full rounded-lg border-slate-300 border p-3 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-shadow"
                 />
+                <button type="button" onClick={fetchProductUrl} disabled={!listingUrl || fetchingUrl} className="mt-2 px-3 py-2 text-sm font-semibold text-indigo-700 border border-indigo-200 rounded-lg disabled:opacity-50">{fetchingUrl ? 'Fetching...' : 'Fetch product details'}</button>
               </div>
+              {urlData && <div className="mt-3 rounded-lg bg-indigo-50 border border-indigo-100 p-3 text-sm text-slate-700">{Object.entries(urlData).map(([key, value]) => <div key={key} className="flex justify-between gap-3"><span className="capitalize text-slate-500">{key.replace(/_/g, ' ')}</span><span className="font-medium">{value || 'Not found'}</span></div>)}</div>}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -354,6 +450,11 @@ const ScanUpload = () => {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">City (Optional)</label>
+                <input type="text" value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Mumbai" className="w-full rounded-lg border-slate-300 border p-3 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-shadow" />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   <FiMapPin className="inline h-3.5 w-3.5 mr-1" />
                   State / UT (Optional)
@@ -369,6 +470,11 @@ const ScanUpload = () => {
                   ))}
                 </select>
               </div>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
+              <FiMapPin className="h-5 w-5 mt-0.5 shrink-0" />
+              <div><p className="font-semibold">Inspector device location</p><p className="mt-0.5">{locationStatus}</p>{deviceLocation && <p className="font-data text-xs mt-1">{deviceLocation.latitude.toFixed(6)}, {deviceLocation.longitude.toFixed(6)}</p>}</div>
             </div>
 
             <button

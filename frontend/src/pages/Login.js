@@ -88,9 +88,9 @@ const Login = () => {
     setLoading(true);
 
     try {
-      await login(email, password);
+      const loggedInUser = await login(email, password);
       toast.success('Welcome back!');
-      navigate('/dashboard');
+      navigate(['administrator', 'admin'].includes(loggedInUser?.role) ? '/admin' : '/dashboard');
     } catch (err) {
       if (err.response) {
         const msg = err.response.data?.error || 'Invalid email or password';
@@ -185,6 +185,13 @@ const Login = () => {
             <p className="mt-2 mb-7 font-['Instrument_Serif'] italic text-lg text-white/50">
               welcome back to the field.
             </p>
+            <Link
+              to="/"
+              className="inline-flex items-center text-sm text-white/55 hover:text-[#FFD100] transition-colors mb-6"
+            >
+              <span aria-hidden="true" className="mr-2">&larr;</span>
+              Back to landing page
+            </Link>
 
             {error && (
               <div className="mb-6 flex items-start space-x-2.5 bg-red-500/10 text-red-300 p-3 rounded-sm border border-red-500/25">

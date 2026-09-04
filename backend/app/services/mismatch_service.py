@@ -1,4 +1,7 @@
 import re
+from html import unescape
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 def parse_ecommerce_url(url):
     """
@@ -20,7 +23,37 @@ def parse_ecommerce_url(url):
             "country_of_origin": "India",
             "manufacturer": "Desi Naturals"
         }
-    return None
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+
+    try:
+        request = Request(url, headers={"User-Agent": "TrueMark-Product-Extractor/1.0"})
+        with urlopen(request, timeout=8) as response:
+            html = response.read(2_000_000).decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+
+    def meta(property_name):
+        match = re.search(
+            rf'<meta[^>]+(?:property|name)=["\']{re.escape(property_name)}["\'][^>]+content=["\']([^"\']+)',
+            html,
+            re.IGNORECASE,
+        )
+        return unescape(match.group(1)).strip() if match else None
+
+    title = meta("og:title") or meta("twitter:title")
+    price = meta("product:price:amount")
+    currency = meta("product:price:currency")
+    description = meta("og:description") or meta("description")
+    product = {}
+    if title:
+        product["product_name"] = title
+    if price:
+        product["mrp"] = f"{currency} {price}" if currency else price
+    if description:
+        product["description"] = description
+    return product or None
 
 def cross_check(listing_url, extracted_fields):
     """
