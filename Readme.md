@@ -16,7 +16,7 @@
 
 ---
 
-## 🌟 What is LegalMetrology-AI?
+## 🌟 What is TrueMark?
 
 **TrueMark** is an AI-assisted compliance inspection platform designed to analyze packaged commodity labels and identify potential violations under the **Legal Metrology Act, 2009** and the **Legal Metrology (Packaged Commodities) Rules, 2011**.
 
