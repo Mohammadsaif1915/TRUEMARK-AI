@@ -86,6 +86,7 @@ def create_app(config_name=None):
     from app.routes.dashboard import dashboard_bp
     from app.routes.history import history_bp
     from app.routes.admin import admin_bp
+    from app.routes.inspection import inspection_bp
 
     app.register_blueprint(
         auth_bp,
@@ -110,6 +111,11 @@ def create_app(config_name=None):
     app.register_blueprint(
         admin_bp,
         url_prefix="/api/admin"
+    )
+
+    app.register_blueprint(
+        inspection_bp,
+        url_prefix="/api/inspection"
     )
 
     # Serve uploaded files

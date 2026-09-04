@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, Legend, Cell
+  LineChart, Line, Legend, Cell, PieChart, Pie
 } from 'recharts';
 import {
   FiCheckCircle, FiXCircle, FiAlertTriangle, FiFileText, FiEye,
-  FiChevronLeft, FiChevronRight, FiArrowUpRight
+  FiChevronLeft, FiChevronRight, FiArrowUpRight, FiActivity, FiX
 } from 'react-icons/fi';
 import api from '../utils/api';
 import { toast } from 'react-toastify';
@@ -18,6 +18,14 @@ import { useAuth } from '../context/AuthContext';
   for compliance status only. font-heading = Fraunces (italic axis
   available), font-body = Inter, font-data = IBM Plex Mono for figures
   that are genuinely tabular (dates, coordinates, ids).
+
+  This pass adds one deliberate centerpiece — a rotating "compliance
+  seal" stamp reading the overall pass rate, echoing the ledger/stamp
+  vocabulary already established by the loading state's copy ("Reading
+  the ledger…") — plus a colorful compliance-breakdown donut and
+  animated mini rings on the stat cards. No new hues are introduced;
+  everything colorful here is a compliance signal (emerald / rose /
+  amber), which keeps the palette meaningful rather than decorative.
 */
 
 /* ------------------------------------------------------------------ */
@@ -63,7 +71,7 @@ const CaseTooltip = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null;
   return (
     <div className="bg-[#0A0A0A] border border-[#F4C10F]/40 rounded-sm px-3 py-2 shadow-lg">
-      <p className="text-[11px] font-data text-white/50 mb-1">{label}</p>
+      {label && <p className="text-[11px] font-data text-white/50 mb-1">{label}</p>}
       {payload.map((p, i) => (
         <p key={i} className="text-sm font-semibold text-[#F4C10F]">
           {p.name || p.dataKey}: <span className="text-white">{p.value}</span>
@@ -83,6 +91,27 @@ const PulseDot = (props) => {
       {isLast && <circle cx={cx} cy={cy} r={8} className="pulse-ring" fill="none" stroke="#F4C10F" strokeWidth="2" />}
       <circle cx={cx} cy={cy} r={3.5} fill="#0A0A0A" stroke="#F4C10F" strokeWidth="2" />
     </g>
+  );
+};
+
+/* Small circular percentage read-out used on the stat cards */
+const MiniRing = ({ percent, color, ready }) => {
+  const circumference = 2 * Math.PI * 15.5;
+  const filled = ready ? (percent / 100) * circumference : 0;
+  return (
+    <div className="relative h-11 w-11 shrink-0">
+      <svg viewBox="0 0 36 36" className="h-11 w-11 -rotate-90">
+        <circle cx="18" cy="18" r="15.5" fill="none" stroke="#F3F4F6" strokeWidth="4" />
+        <circle
+          cx="18" cy="18" r="15.5" fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
+          strokeDasharray={`${filled} ${circumference}`}
+          className="grow-ring transition-[stroke-dasharray] duration-700 ease-out"
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[9px] font-data font-bold text-gray-600">
+        {ready ? percent : 0}%
+      </span>
+    </div>
   );
 };
 
@@ -106,6 +135,7 @@ const Dashboard = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [activeBar, setActiveBar] = useState(null);
+  const [barsReady, setBarsReady] = useState(false);
   const [filters, setFilters] = useState({
     status: '',
     manufacturer: '',
@@ -172,10 +202,24 @@ const Dashboard = () => {
     return () => window.clearInterval(timer);
   }, [fetchAssignedReports]);
 
+  // Let the mini rings / segmented bar mount at 0 and animate in once real numbers land.
+  useEffect(() => {
+    setBarsReady(false);
+    const timer = window.setTimeout(() => setBarsReady(true), 60);
+    return () => window.clearTimeout(timer);
+  }, [stats]);
+
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(1);
   };
+
+  const clearFilters = () => {
+    setFilters({ status: '', manufacturer: '', date_from: '', date_to: '' });
+    setPage(1);
+  };
+
+  const hasActiveFilters = Object.values(filters).some(Boolean);
 
   const getStatusBadge = (status) => {
     switch (status?.toLowerCase()) {
@@ -196,6 +240,15 @@ const Dashboard = () => {
     count: v.count,
   }));
 
+  const percentOf = (n) => (stats?.total_scans ? Math.round(((n || 0) / stats.total_scans) * 100) : 0);
+  const complianceRate = percentOf(stats?.compliant);
+
+  const breakdownData = useMemo(() => ([
+    { name: 'Compliant', value: stats?.compliant ?? 0, fill: '#059669' },
+    { name: 'Non-Compliant', value: stats?.non_compliant ?? 0, fill: '#e11d48' },
+    { name: 'Partially Compliant', value: stats?.partially_compliant ?? 0, fill: '#F4C10F' },
+  ]), [stats]);
+
   const hasNoScans = !stats || (stats.total_scans === 0 && assignedReports.length === 0);
 
   const statCards = [
@@ -205,6 +258,8 @@ const Dashboard = () => {
       icon: FiFileText,
       accent: '#0A0A0A',
       iconClass: 'text-[#0A0A0A]',
+      percent: null,
+      footnote: 'All time',
     },
     {
       label: 'Compliant',
@@ -212,6 +267,8 @@ const Dashboard = () => {
       icon: FiCheckCircle,
       accent: '#059669',
       iconClass: 'text-emerald-600',
+      percent: percentOf(stats?.compliant),
+      footnote: `${percentOf(stats?.compliant)}% of scans`,
     },
     {
       label: 'Non-Compliant',
@@ -219,6 +276,8 @@ const Dashboard = () => {
       icon: FiXCircle,
       accent: '#e11d48',
       iconClass: 'text-rose-600',
+      percent: percentOf(stats?.non_compliant),
+      footnote: `${percentOf(stats?.non_compliant)}% of scans`,
     },
     {
       label: 'Partially Compliant',
@@ -226,6 +285,8 @@ const Dashboard = () => {
       icon: FiAlertTriangle,
       accent: '#F4C10F',
       iconClass: 'text-[#8A6A00]',
+      percent: percentOf(stats?.partially_compliant),
+      footnote: `${percentOf(stats?.partially_compliant)}% of scans`,
     },
   ];
 
@@ -236,14 +297,29 @@ const Dashboard = () => {
     @keyframes pulse-ring { 0% { r: 3.5; opacity: .9; } 100% { r: 11; opacity: 0; } }
     .pulse-ring { animation: pulse-ring 1.6s ease-out infinite; transform-origin: center; }
 
+    @keyframes seal-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .seal-spin { animation: seal-spin 60s linear infinite; }
+
+    @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+    .live-dot { animation: live-pulse 1.8s ease-in-out infinite; }
+
+    @keyframes risk-pulse { 0% { box-shadow: 0 0 0 0 rgba(225,29,72,0.45); } 100% { box-shadow: 0 0 0 6px rgba(225,29,72,0); } }
+    .risk-pulse { animation: risk-pulse 1.8s ease-out infinite; }
+
     @media (prefers-reduced-motion: reduce) {
       .card-rise { animation: none; }
       .pulse-ring { animation: none; opacity: 0; }
+      .seal-spin { animation: none; }
+      .live-dot { animation: none; }
+      .risk-pulse { animation: none; }
+      .grow-ring, .grow-bar { transition: none !important; }
     }
 
     .stat-card { position: relative; overflow: hidden; transition: transform .2s ease, box-shadow .2s ease; }
     .stat-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px -12px rgba(10,10,10,0.18); }
     .stat-card__bar { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+    .stat-card__tint { position: absolute; inset: 0; opacity: 0; transition: opacity .2s ease; pointer-events: none; }
+    .stat-card:hover .stat-card__tint { opacity: 1; }
 
     .sweep-btn { position: relative; overflow: hidden; z-index: 0; border-color: #d1d5db; color: #374151; background: #fff; }
     .sweep-btn::before {
@@ -256,14 +332,20 @@ const Dashboard = () => {
     .sweep-btn--dark::before { background: #F4C10F; }
     .sweep-btn--dark:not(:disabled):hover { color: #0A0A0A; }
 
-    .row-hover { transition: background-color .15s ease; }
+    .row-hover { transition: background-color .15s ease, box-shadow .15s ease; position: relative; }
     .row-hover:hover { background-color: #FBF6E4; }
+    .row-accent::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: transparent; transition: background-color .15s ease; }
+    .row-accent:hover::before { background: #F4C10F; }
 
     .view-link { position: relative; }
     .view-link .arrow-icon { transition: transform .18s ease; }
     .view-link:hover .arrow-icon { transform: translate(2px, -2px); }
 
     .focus-yellow:focus { outline: none; box-shadow: 0 0 0 2px rgba(244,193,15,0.5); border-color: #F4C10F; }
+
+    .ledger-lines {
+      background-image: repeating-linear-gradient(0deg, rgba(244,193,15,0.07) 0px, rgba(244,193,15,0.07) 1px, transparent 1px, transparent 27px);
+    }
   `;
 
   if (loading) {
@@ -327,24 +409,63 @@ const Dashboard = () => {
     <div className="max-w-7xl mx-auto px-4 py-8">
       <style>{dashboardStyles}</style>
 
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold text-[#0A0A0A]">Dashboard</h1>
           <p className="text-gray-600 mt-1 font-heading italic">Compliance scan overview and analytics</p>
         </div>
-        {user && (
-          <div className="hidden sm:flex items-center space-x-2 bg-[#F4C10F]/10 px-3 py-1.5 rounded-sm border border-[#F4C10F]/30">
-            <span className="text-sm text-[#8A6A00] font-medium">Role:</span>
-            <span className="text-sm text-[#0A0A0A] font-bold">{user.role_display_name || user.role}</span>
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-gray-400">
+            <span className="live-dot h-1.5 w-1.5 rounded-full bg-emerald-500" /> live
+          </span>
+          {user && (
+            <div className="hidden sm:flex items-center space-x-2 bg-[#F4C10F]/10 px-3 py-1.5 rounded-sm border border-[#F4C10F]/30">
+              <span className="text-sm text-[#8A6A00] font-medium">Role:</span>
+              <span className="text-sm text-[#0A0A0A] font-bold">{user.role_display_name || user.role}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Compliance seal hero ─── */}
+      <div className="ledger-lines relative overflow-hidden bg-[#0A0A0A] rounded-sm p-6 sm:p-8 mb-6 card-rise flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
+        <div className="relative h-28 w-28 sm:h-32 sm:w-32 shrink-0">
+          <div className="seal-spin absolute inset-0 rounded-full border-2 border-dashed border-[#F4C10F]/50" />
+          <div className="absolute inset-3 rounded-full border border-[#F4C10F]/25" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="font-heading italic text-3xl font-bold text-[#F4C10F] leading-none">
+              <CountUp value={complianceRate} />%
+            </span>
+            <span className="text-[9px] uppercase tracking-widest text-white/50 mt-1.5">compliant</span>
           </div>
+        </div>
+
+        <div className="flex-1 text-center sm:text-left">
+          <p className="text-xs font-data uppercase tracking-widest text-[#F4C10F]">Compliance ledger</p>
+          <h2 className="font-heading italic text-xl sm:text-2xl font-bold text-white mt-1">
+            {complianceRate}% of scanned products are clean
+          </h2>
+          <p className="text-sm text-white/50 mt-2 max-w-md mx-auto sm:mx-0">
+            {stats.total_scans} scans reviewed · {stats.non_compliant ?? 0} flagged non-compliant · {assignedReports.length} citizen report{assignedReports.length === 1 ? '' : 's'} awaiting review
+          </p>
+        </div>
+
+        {assignedReports.length > 0 && (
+          <a
+            href="#assigned-reports"
+            className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 bg-[#F4C10F] text-[#0A0A0A] rounded-sm text-sm font-bold transition-transform duration-200 hover:scale-105"
+          >
+            <FiEye className="h-4 w-4" /> Review queue
+          </a>
         )}
       </div>
+
       <div className="flex items-center justify-between gap-3 mb-6 px-4 py-3 bg-indigo-50 border border-indigo-200 rounded-sm">
         <div>
           <p className="text-sm font-semibold text-indigo-950">Assigned citizen reports</p>
           <p className="text-xs text-indigo-700 mt-0.5">Reports routed to you by an administrator.</p>
         </div>
-        <a href="#assigned-reports" className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-700 text-white rounded-sm text-sm font-semibold hover:bg-indigo-800">
+        <a href="#assigned-reports" className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-700 text-white rounded-sm text-sm font-semibold hover:bg-indigo-800 transition-colors">
           <FiEye className="h-4 w-4" /> View assigned reports <span className="font-data">{assignedReports.length}</span>
         </a>
       </div>
@@ -368,7 +489,8 @@ const Dashboard = () => {
               style={{ animationDelay: `${i * 70}ms` }}
             >
               <span className="stat-card__bar" style={{ backgroundColor: card.accent }} />
-              <div className="flex items-center justify-between">
+              <span className="stat-card__tint" style={{ backgroundColor: `${card.accent}0D` }} />
+              <div className="relative flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-500">{card.label}</p>
                   <p className="font-heading text-3xl font-bold text-[#0A0A0A] mt-1">
@@ -377,20 +499,24 @@ const Dashboard = () => {
                 </div>
                 <Icon className={`h-7 w-7 ${card.iconClass}`} />
               </div>
+              <div className="relative flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                <p className="text-xs text-gray-400">{card.footnote}</p>
+                {card.percent != null && <MiniRing percent={card.percent} color={card.accent} ready={barsReady} />}
+              </div>
             </div>
           );
         })}
       </div>
 
       {/* ─── Charts ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="bg-white rounded-sm shadow-sm border border-gray-200 p-6">
           <div className="flex items-center space-x-2 mb-4">
             <span className="h-2 w-2 bg-[#F4C10F]" />
             <h3 className="font-heading text-lg font-semibold text-[#0A0A0A]">Scans Over Time</h3>
           </div>
           {trendData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={280}>
               <LineChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} />
@@ -422,7 +548,7 @@ const Dashboard = () => {
             <h3 className="font-heading text-lg font-semibold text-[#0A0A0A]">Top Violations</h3>
           </div>
           {violationsData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={280}>
               <BarChart
                 data={violationsData}
                 onMouseMove={(state) => {
@@ -452,11 +578,67 @@ const Dashboard = () => {
             <EmptyChart message="No violations recorded yet" />
           )}
         </div>
+
+        <div className="bg-white rounded-sm shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center space-x-2 mb-4">
+            <span className="h-2 w-2 bg-[#F4C10F]" />
+            <h3 className="font-heading text-lg font-semibold text-[#0A0A0A]">Compliance Breakdown</h3>
+          </div>
+          {stats.total_scans > 0 ? (
+            <>
+              <div className="relative" style={{ height: 200 }}>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={breakdownData}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={58}
+                      outerRadius={82}
+                      paddingAngle={3}
+                      stroke="none"
+                      isAnimationActive
+                      animationDuration={800}
+                    >
+                      {breakdownData.map((d) => <Cell key={d.name} fill={d.fill} />)}
+                    </Pie>
+                    <Tooltip content={<CaseTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="font-heading italic text-2xl font-bold text-[#0A0A0A]">{stats.total_scans}</span>
+                  <span className="text-[9px] uppercase tracking-widest text-gray-400">total scans</span>
+                </div>
+              </div>
+              <div className="space-y-3 mt-3">
+                {breakdownData.map((d) => (
+                  <div key={d.name}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="inline-flex items-center gap-1.5 text-gray-600">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.fill }} />
+                        {d.name}
+                      </span>
+                      <span className="font-data font-semibold text-gray-700">{d.value}</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="grow-bar h-full rounded-full transition-all duration-700 ease-out"
+                        style={{ width: barsReady ? `${percentOf(d.value)}%` : '0%', backgroundColor: d.fill }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <EmptyChart message="No compliance data yet" />
+          )}
+        </div>
       </div>
 
       <div id="assigned-reports" className="bg-white rounded-sm shadow-sm border border-indigo-200 overflow-hidden mb-8">
           <div className="p-6 border-b border-indigo-100 bg-indigo-50"><h3 className="font-heading text-lg font-semibold text-indigo-950">Assigned citizen reports</h3><p className="text-sm text-indigo-700 mt-1">Reports routed to you by an administrator.</p></div>
-          {assignedReports.length > 0 ? <div className="divide-y divide-gray-100">{assignedReports.map((report) => <div key={report.id} className="p-5 flex flex-col sm:flex-row sm:items-center gap-4"><img src={report.image_url || '/logo.png'} alt="Citizen report" className="h-16 w-16 rounded-lg object-cover border border-slate-200" /><div className="flex-1"><p className="font-semibold text-[#0A0A0A]">{report.product_name || 'Product not named'}</p><p className="text-sm text-gray-600 mt-1">{report.shop_name || 'Shop not provided'} · {report.city || report.state || 'Location not captured'}</p><p className="text-xs text-gray-500 mt-1">{report.purchase_address || 'Address not provided'}</p></div><Link to={`/scan/${report.id}`} className="view-link inline-flex items-center space-x-1 text-sm text-[#0A0A0A] font-medium"><FiEye className="h-4 w-4" /><span>Review</span><FiArrowUpRight className="arrow-icon h-3.5 w-3.5" /></Link></div>)}</div> : <div className="p-8 text-center text-sm text-gray-500">No reports are assigned to you yet.</div>}
+          {assignedReports.length > 0 ? <div className="divide-y divide-gray-100">{assignedReports.map((report) => <div key={report.id} className="row-hover row-accent p-5 flex flex-col sm:flex-row sm:items-center gap-4"><img src={report.image_url || '/logo.png'} alt="Citizen report" className="h-16 w-16 rounded-lg object-cover border border-slate-200" /><div className="flex-1"><p className="font-semibold text-[#0A0A0A]">{report.product_name || 'Product not named'}</p><p className="text-sm text-gray-600 mt-1">{report.shop_name || 'Shop not provided'} · {report.city || report.state || 'Location not captured'}</p><p className="text-xs text-gray-500 mt-1">{report.purchase_address || 'Address not provided'}</p></div><Link to={`/scan/${report.id}`} className="view-link inline-flex items-center space-x-1 text-sm text-[#0A0A0A] font-medium"><FiEye className="h-4 w-4" /><span>Review</span><FiArrowUpRight className="arrow-icon h-3.5 w-3.5" /></Link></div>)}</div> : <div className="p-8 text-center text-sm text-gray-500">No reports are assigned to you yet.</div>}
       </div>
 
       {/* ─── Recent scans table ─── */}
@@ -494,6 +676,15 @@ const Dashboard = () => {
                 onChange={(e) => handleFilterChange('date_to', e.target.value)}
                 className="focus-yellow text-sm border border-gray-300 rounded-sm px-3 py-1.5"
               />
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-rose-600 transition-colors"
+                >
+                  <FiX className="h-3.5 w-3.5" /> Clear
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -512,7 +703,7 @@ const Dashboard = () => {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {scans.map((scan) => (
-                  <tr key={scan.id} className="row-hover">
+                  <tr key={scan.id} className="row-hover row-accent">
                     <td className="px-6 py-4 text-sm text-gray-600 font-data">
                       {new Date(scan.created_at || scan.timestamp).toLocaleDateString()}
                     </td>
@@ -587,37 +778,41 @@ const Dashboard = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
-                {leads.map((lead) => (
-                  <tr key={lead.id} className="row-hover">
-                    <td className="px-6 py-4 text-gray-500 whitespace-nowrap font-data">
-                      {new Date(lead.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-[#0A0A0A]">{lead.product_name || 'Unknown'}</div>
-                      <div className="text-gray-500 text-xs mt-0.5">{lead.manufacturer || 'Unknown'}</div>
-                    </td>
-                    <td className="px-6 py-4 text-gray-500 font-data">
-                      {lead.latitude && lead.longitude
-                        ? `${lead.latitude.toFixed(4)}, ${lead.longitude.toFixed(4)}`
-                        : (lead.state || 'Unknown')}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-sm text-xs font-medium ${getStatusBadge(lead.overall_status)}`}>
-                        {lead.overall_status.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <Link
-                        to={`/scan/${lead.id}`}
-                        className="view-link inline-flex items-center space-x-1 text-sm text-[#0A0A0A] hover:text-[#8A6A00] font-medium"
-                      >
-                        <FiEye className="h-4 w-4" />
-                        <span>Inspect</span>
-                        <FiArrowUpRight className="arrow-icon h-3.5 w-3.5" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {leads.map((lead) => {
+                  const isHighRisk = (lead.overall_status || '').toLowerCase().includes('non');
+                  return (
+                    <tr key={lead.id} className="row-hover row-accent">
+                      <td className="px-6 py-4 text-gray-500 whitespace-nowrap font-data">
+                        {new Date(lead.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-[#0A0A0A]">{lead.product_name || 'Unknown'}</div>
+                        <div className="text-gray-500 text-xs mt-0.5">{lead.manufacturer || 'Unknown'}</div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-500 font-data">
+                        {lead.latitude && lead.longitude
+                          ? `${lead.latitude.toFixed(4)}, ${lead.longitude.toFixed(4)}`
+                          : (lead.state || 'Unknown')}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-xs font-medium ${getStatusBadge(lead.overall_status)}`}>
+                          {isHighRisk && <span className="risk-pulse h-1.5 w-1.5 rounded-full bg-rose-500" />}
+                          {lead.overall_status.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <Link
+                          to={`/scan/${lead.id}`}
+                          className="view-link inline-flex items-center space-x-1 text-sm text-[#0A0A0A] hover:text-[#8A6A00] font-medium"
+                        >
+                          <FiEye className="h-4 w-4" />
+                          <span>Inspect</span>
+                          <FiArrowUpRight className="arrow-icon h-3.5 w-3.5" />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -1,5 +1,7 @@
 import os
+import io
 import hashlib
+import tempfile
 from datetime import datetime, timezone
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -12,8 +14,9 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     HRFlowable,
+    Image,
+    PageBreak,
 )
-
 
 STATUS_COLORS = {
     "pass": colors.HexColor("#27ae60"),
@@ -32,6 +35,98 @@ SEVERITY_COLORS = {
     "warning": colors.HexColor("#f39c12"),
     "info": colors.HexColor("#3498db"),
 }
+
+
+ZONE_LABELS_PDF = {
+    "mrp_zone": "MRP Zone",
+    "manufacturer_zone": "Manufacturer Zone",
+    "consumer_care_zone": "Consumer Care Zone",
+    "net_qty_zone": "Net Quantity Zone",
+    "bottom_panel": "Bottom Panel",
+    "unknown": "Text Region",
+}
+
+
+def _get_zone_for_check(check):
+    """Map a compliance check's rule_name to its OCR zone key."""
+    name = (check.get("rule_name") or "").lower()
+    if "mrp" in name or "price" in name:
+        return "mrp_zone"
+    if "quantity" in name or "weight" in name or "net" in name:
+        return "net_qty_zone"
+    if "manufacturer" in name or "address" in name:
+        return "manufacturer_zone"
+    if "care" in name or "helpline" in name or "contact" in name:
+        return "consumer_care_zone"
+    return None
+
+
+def _annotate_zone_image(image_source, ocr_regions, zone_key, max_width=480):
+    """
+    Opens the product image and draws red bounding boxes for the given zone.
+    Returns a BytesIO PNG buffer ready for reportlab Image(), or None on failure.
+    """
+    try:
+        from PIL import Image as PILImage, ImageDraw
+
+        # --- Load image ---
+        pil_img = None
+        if isinstance(image_source, str):
+            if image_source.startswith("http://") or image_source.startswith("https://"):
+                import urllib.request
+                with urllib.request.urlopen(image_source, timeout=8) as resp:
+                    pil_img = PILImage.open(io.BytesIO(resp.read())).convert("RGBA")
+            elif os.path.exists(image_source):
+                pil_img = PILImage.open(image_source).convert("RGBA")
+
+        if pil_img is None:
+            return None
+
+        # --- Filter OCR regions for this zone ---
+        zone_items = [
+            r for r in (ocr_regions or [])
+            if r.get("zone") == zone_key and r.get("bbox") and len(r["bbox"]) >= 4
+        ]
+        if not zone_items:
+            return None
+
+        # --- Draw semi-transparent red rects on a separate layer ---
+        overlay = PILImage.new("RGBA", pil_img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+
+        for item in zone_items:
+            pts = item["bbox"]
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+            # Filled translucent rectangle
+            draw.rectangle([x0, y0, x1, y1], fill=(239, 68, 68, 70))
+            # Solid border (draw 4 narrow rectangles for border)
+            bw = 3
+            draw.rectangle([x0, y0, x1, y0 + bw], fill=(239, 68, 68, 255))
+            draw.rectangle([x0, y1 - bw, x1, y1], fill=(239, 68, 68, 255))
+            draw.rectangle([x0, y0, x0 + bw, y1], fill=(239, 68, 68, 255))
+            draw.rectangle([x1 - bw, y0, x1, y1], fill=(239, 68, 68, 255))
+
+        # Composite overlay onto a slightly dimmed base
+        dimmed = PILImage.new("RGBA", pil_img.size, (0, 0, 0, 40))
+        result = PILImage.alpha_composite(pil_img, dimmed)
+        result = PILImage.alpha_composite(result, overlay)
+        result = result.convert("RGB")
+
+        # --- Resize to max_width ---
+        W, H = result.size
+        if W > max_width:
+            result = result.resize((max_width, int(H * max_width / W)), PILImage.LANCZOS)
+
+        buf = io.BytesIO()
+        result.save(buf, format="PNG")
+        buf.seek(0)
+        return buf
+
+    except Exception as err:
+        print(f"Zone annotation failed: {err}")
+        return None
 
 
 def generate_pdf_report(scan):
@@ -269,8 +364,116 @@ def generate_pdf_report(scan):
             small_style,
         ))
 
-        from reportlab.platypus import PageBreak
+        # ── Manual Inspection Records section ──────────────────────────────
+        manual_inspections = list(getattr(scan, 'manual_inspections', None) or [])
+        if manual_inspections:
+            elements.append(PageBreak())
+            elements.append(Paragraph("Manual Inspection Records", heading_style))
+            elements.append(Paragraph(
+                "The following checks were verified in-person by an authorised inspector "
+                "after the AI extraction phase.",
+                body_style,
+            ))
+            elements.append(Spacer(1, 8))
+
+            OUTCOME_COLORS = {
+                "pass": colors.HexColor("#27ae60"),
+                "fail": colors.HexColor("#e74c3c"),
+                "complete": colors.HexColor("#2980b9"),
+            }
+
+            for mi_idx, mi in enumerate(manual_inspections):
+                outcome = (mi.outcome or "unknown").upper()
+                out_color = OUTCOME_COLORS.get(mi.outcome or "", colors.grey)
+
+                # Section header for each inspection record
+                mi_header_style = ParagraphStyle(
+                    f"MIHeader_{mi_idx}",
+                    parent=styles["Normal"],
+                    fontSize=11,
+                    textColor=out_color,
+                    fontName="Helvetica-Bold",
+                    spaceBefore=10,
+                    spaceAfter=4,
+                )
+                rule_label = (mi.rule_name or "Unknown Rule").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                elements.append(Paragraph(
+                    f"[{outcome}] {rule_label}",
+                    mi_header_style,
+                ))
+
+                # Detail table
+                inspector_display = "Unknown"
+                if mi.inspector:
+                    inspector_display = mi.inspector.full_name or mi.inspector.username or "Unknown"
+                insp_date = mi.created_at.strftime("%d %b %Y, %H:%M UTC") if mi.created_at else "N/A"
+                citation_display = (mi.citation or "N/A").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                field_val_display = (mi.field_value or "—").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                notes_display = (mi.notes or "—").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+                mi_table_data = [
+                    [Paragraph("Citation", small_style), Paragraph(citation_display, body_style)],
+                    [Paragraph("Inspector", small_style), Paragraph(inspector_display, body_style)],
+                    [Paragraph("Date", small_style), Paragraph(insp_date, body_style)],
+                    [Paragraph("Observed Value", small_style), Paragraph(field_val_display, body_style)],
+                    [Paragraph("Notes", small_style), Paragraph(notes_display, body_style)],
+                ]
+                mi_table = Table(mi_table_data, colWidths=[1.4 * inch, 5.1 * inch])
+                mi_table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#ecf0f1")),
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#bdc3c7")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#f9f9f9")]),
+                ]))
+                elements.append(mi_table)
+
+                # Evidence images
+                evidence_paths = mi.evidence_paths or []
+                if evidence_paths:
+                    elements.append(Spacer(1, 6))
+                    elements.append(Paragraph(
+                        f"Evidence ({len(evidence_paths)} file{'s' if len(evidence_paths) != 1 else ''})",
+                        small_style,
+                    ))
+                    for ev_path in evidence_paths:
+                        img_data = None
+                        try:
+                            if ev_path.startswith("http://") or ev_path.startswith("https://"):
+                                import urllib.request
+                                with urllib.request.urlopen(ev_path, timeout=8) as r:
+                                    img_data = io.BytesIO(r.read())
+                            elif os.path.exists(ev_path):
+                                img_data = ev_path
+                        except Exception as img_err:
+                            print(f"Evidence load error: {img_err}")
+
+                        if img_data:
+                            try:
+                                img = Image(img_data, width=4.5 * inch, height=3.0 * inch)
+                                img.hAlign = "LEFT"
+                                elements.append(img)
+                                elements.append(Spacer(1, 4))
+                            except Exception as draw_err:
+                                print(f"Evidence embed error: {draw_err}")
+                                elements.append(Paragraph(
+                                    f"[Evidence file could not be embedded: {ev_path}]",
+                                    small_style,
+                                ))
+                        else:
+                            elements.append(Paragraph(
+                                f"[Evidence unavailable: {ev_path}]",
+                                small_style,
+                            ))
+
+                elements.append(Spacer(1, 6))
+
         elements.append(PageBreak())
+
         
         cert_title = ParagraphStyle(
             "CertTitle",

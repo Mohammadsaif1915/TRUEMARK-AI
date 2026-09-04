@@ -40,11 +40,16 @@ class User(db.Model):
     last_login_at = db.Column(db.DateTime, nullable=True)
     last_logout_at = db.Column(db.DateTime, nullable=True)
     last_seen_at = db.Column(db.DateTime, nullable=True)
+    phone_number = db.Column(db.String(20), nullable=True)
+    department = db.Column(db.String(100), nullable=True)
+    designation = db.Column(db.String(100), nullable=True)
+    must_change_password = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
     scans = db.relationship("Scan", backref="user", lazy=True, foreign_keys="Scan.user_id")
+    manual_inspections = db.relationship("ManualInspection", backref="inspector", lazy=True, foreign_keys="ManualInspection.inspected_by_id")
 
     def set_password(self, password):
         self.password_hash = bcrypt.hashpw(
@@ -70,6 +75,10 @@ class User(db.Model):
             "full_name": self.full_name,
             "badge_number": self.badge_number,
             "working_city": self.working_city,
+            "phone_number": self.phone_number,
+            "department": self.department,
+            "designation": self.designation,
+            "must_change_password": self.must_change_password,
             "is_active": self.is_active,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
             "last_logout_at": self.last_logout_at.isoformat() if self.last_logout_at else None,
@@ -109,6 +118,10 @@ class Scan(db.Model):
         db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
+    manual_inspections = db.relationship(
+        "ManualInspection", backref="scan", lazy=True, foreign_keys="ManualInspection.scan_id"
+    )
+
     def to_dict(self):
         img_url = None
         if self.image_path and self.image_path.startswith("http"):
@@ -140,5 +153,45 @@ class Scan(db.Model):
             "assigned_inspector_id": self.assigned_inspector_id,
             "report_status": self.report_status,
             "analysis_image_path": self.analysis_image_path,
+            "created_at": self.created_at.isoformat(),
+            "manual_inspections": [mi.to_dict() for mi in (self.manual_inspections or [])],
+        }
+
+
+class ManualInspection(db.Model):
+    """Stores a human inspector's manual verification of a single compliance check."""
+    __tablename__ = "manual_inspections"
+
+    id = db.Column(db.Integer, primary_key=True)
+    scan_id = db.Column(db.Integer, db.ForeignKey("scans.id"), nullable=False)
+    # Which check in compliance_result.checks[] this relates to (0-based index)
+    check_index = db.Column(db.Integer, nullable=False)
+    rule_name = db.Column(db.String(300), nullable=True)
+    citation = db.Column(db.String(300), nullable=True)
+    # What the inspector physically observed for the field
+    field_value = db.Column(db.Text, nullable=True)
+    # Inspector's determination: 'pass', 'fail', 'complete'
+    outcome = db.Column(db.String(20), nullable=False)
+    notes = db.Column(db.Text, nullable=True)
+    # List of uploaded evidence image paths / URLs (JSON array)
+    evidence_paths = db.Column(db.JSON, nullable=True, default=list)
+    inspected_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    created_at = db.Column(
+        db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "scan_id": self.scan_id,
+            "check_index": self.check_index,
+            "rule_name": self.rule_name,
+            "citation": self.citation,
+            "field_value": self.field_value,
+            "outcome": self.outcome,
+            "notes": self.notes,
+            "evidence_paths": self.evidence_paths or [],
+            "inspected_by_id": self.inspected_by_id,
+            "inspector_name": self.inspector.full_name if self.inspector else None,
             "created_at": self.created_at.isoformat(),
         }

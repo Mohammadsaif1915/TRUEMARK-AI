@@ -5,10 +5,10 @@ import 'react-toastify/dist/ReactToastify.css';
 
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
 import Navbar from './components/Navbar';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
-import Register from './pages/Register';
 import ScanUpload from './pages/ScanUpload';
 import ScanResult from './pages/ScanResult';
 import Dashboard from './pages/Dashboard';
@@ -26,7 +26,7 @@ const App = () => {
             {/* Public routes */}
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            <Route path="/register" element={<div className="min-h-screen flex items-center justify-center bg-gray-50"><p className="text-gray-500 font-medium">Registration is restricted to administrators.</p></div>} />
             <Route path="/report" element={
               <>
                 <Navbar />
@@ -83,10 +83,10 @@ const App = () => {
             <Route
               path="/admin"
               element={
-                <ProtectedRoute>
+                <AdminRoute>
                   <Navbar />
                   <main><AdminPage /></main>
-                </ProtectedRoute>
+                </AdminRoute>
               }
             />
 

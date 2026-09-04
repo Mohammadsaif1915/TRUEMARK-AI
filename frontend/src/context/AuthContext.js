@@ -48,9 +48,14 @@ export const AuthProvider = ({ children }) => {
     return userData;
   };
 
-  const register = async (data) => {
-    const response = await api.post('/auth/register', data);
-    return response.data;
+  const changePassword = async (email, temporary_password, new_password) => {
+    const response = await api.post('/auth/change-password', { email, temporary_password, new_password });
+    const { access_token, user: userData } = response.data;
+    localStorage.setItem('token', access_token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    setToken(access_token);
+    setUser(userData);
+    return userData;
   };
 
   const logout = async () => {
@@ -70,7 +75,7 @@ export const AuthProvider = ({ children }) => {
     token,
     loading,
     login,
-    register,
+    changePassword,
     logout,
     isAuthenticated: !!token && !!user,
   };

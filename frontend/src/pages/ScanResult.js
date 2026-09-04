@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FiCheckCircle, FiXCircle, FiAlertTriangle, FiDownload, FiArrowLeft,
-  FiShield, FiEye, FiEyeOff, FiFileText, FiExternalLink, FiPackage
+  FiShield, FiEye, FiEyeOff, FiFileText, FiExternalLink, FiPackage,
+  FiClipboard, FiEdit2
 } from 'react-icons/fi';
 import api from '../utils/api';
 import { toast } from 'react-toastify';
+import ManualInspectionModal from '../components/ManualInspectionModal';
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
 
@@ -59,6 +61,16 @@ function hexToRgba(hex, alpha) {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Maps a compliance check's rule_name to its OCR zone key.
+function getZoneForCheck(check) {
+  const name = (check?.rule_name || '').toLowerCase();
+  if (name.includes('mrp') || name.includes('price')) return 'mrp_zone';
+  if (name.includes('quantity') || name.includes('weight') || name.includes('net')) return 'net_qty_zone';
+  if (name.includes('manufacturer') || name.includes('address')) return 'manufacturer_zone';
+  if (name.includes('care') || name.includes('helpline') || name.includes('contact')) return 'consumer_care_zone';
+  return null;
 }
 
 function useAnimatedNumber(target, duration = 900) {
@@ -137,6 +149,74 @@ const BboxOverlay = ({ extractedData, imgNaturalWidth, imgNaturalHeight, display
           </div>
         );
       })}
+    </div>
+  );
+};
+
+// Shows the product image dimmed with red bounding box overlays for a specific failing zone.
+const ZoneEvidenceImage = ({ imageUrl, extractedData, targetZone }) => {
+  const eImgRef = React.useRef(null);
+  const [eDims, setEDims] = React.useState({ natW: 0, natH: 0, dispW: 0, dispH: 0 });
+
+  if (!imageUrl || !targetZone || !extractedData) return null;
+  const zoneItems = extractedData.filter(d => d.zone === targetZone && d.bbox && d.bbox.length >= 4);
+  if (zoneItems.length === 0) return null;
+
+  const handleLoad = () => {
+    const img = eImgRef.current;
+    if (img) setEDims({ natW: img.naturalWidth, natH: img.naturalHeight, dispW: img.clientWidth, dispH: img.clientHeight });
+  };
+
+  const scaleX = eDims.natW ? eDims.dispW / eDims.natW : 0;
+  const scaleY = eDims.natH ? eDims.dispH / eDims.natH : 0;
+
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+        Zone Evidence &mdash; <span className="text-rose-500 font-bold">{ZONE_LABELS[targetZone] || targetZone}</span>
+      </p>
+      <div className="relative bg-slate-900 rounded-xl overflow-hidden border-2 border-rose-300 shadow">
+        <img
+          ref={eImgRef}
+          src={imageUrl}
+          alt={`Zone evidence: ${targetZone}`}
+          onLoad={handleLoad}
+          className="w-full max-h-60 object-contain"
+          style={{ filter: 'brightness(0.82) contrast(1.05)' }}
+        />
+        {scaleX > 0 && zoneItems.map((item, i) => {
+          const pts = item.bbox;
+          const xs = pts.map(p => p[0]);
+          const ys = pts.map(p => p[1]);
+          const x = Math.min(...xs) * scaleX;
+          const y = Math.min(...ys) * scaleY;
+          const w = (Math.max(...xs) - Math.min(...xs)) * scaleX;
+          const h = (Math.max(...ys) - Math.min(...ys)) * scaleY;
+          return (
+            <div key={i} style={{
+              position: 'absolute', left: x, top: y, width: w, height: h,
+              backgroundColor: 'rgba(239,68,68,0.22)',
+              border: '2px solid #ef4444',
+              borderRadius: 2,
+              boxShadow: '0 0 0 1px rgba(239,68,68,0.35)',
+            }}>
+              {i === 0 && (
+                <span style={{
+                  position: 'absolute', top: -16, left: 0,
+                  fontSize: 9, fontWeight: 700, color: '#fff',
+                  background: '#ef4444', padding: '1px 6px', borderRadius: 3,
+                  whiteSpace: 'nowrap', letterSpacing: '0.04em',
+                }}>
+                  {ZONE_LABELS[targetZone] || targetZone} ✗
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-slate-400 mt-1.5">
+        Red boxes mark the <span className="font-semibold">{ZONE_LABELS[targetZone] || targetZone}</span> region where extraction failed.
+      </p>
     </div>
   );
 };
@@ -326,6 +406,9 @@ const ScanResult = () => {
   const [showBboxes, setShowBboxes] = useState(false);
   const [imgDims, setImgDims] = useState({ natW: 0, natH: 0, dispW: 0, dispH: 0 });
   const imgRef = useRef(null);
+  // Manual inspections state
+  const [inspections, setInspections] = useState({});   // keyed by check_index
+  const [inspectionModal, setInspectionModal] = useState(null); // { check, index } | null
 
   useEffect(() => {
     const fetchScan = async () => {
@@ -345,6 +428,24 @@ const ScanResult = () => {
     };
     fetchScan();
   }, [id, navigate]);
+
+  // Load existing manual inspections for this scan
+  useEffect(() => {
+    if (!id) return;
+    api.get(`/inspection/${id}`)
+      .then(res => {
+        const map = {};
+        (res.data.inspections || []).forEach(mi => {
+          map[mi.check_index] = mi;
+        });
+        setInspections(map);
+      })
+      .catch(() => {}); // non-critical
+  }, [id]);
+
+  const handleInspectionSaved = useCallback((inspection) => {
+    setInspections(prev => ({ ...prev, [inspection.check_index]: inspection }));
+  }, []);
 
 
   const handleImageLoad = useCallback(() => {
@@ -672,33 +773,82 @@ const ScanResult = () => {
                         <th className="text-left px-6 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
                         <th className="text-left px-6 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Confidence</th>
                         <th className="text-left px-6 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Extracted Evidence</th>
+                        <th className="text-left px-6 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {checks.map((check, index) => (
-                        <tr key={index} className={`border-l-4 ${rowAccent(check.status)} hover:bg-slate-50/60 transition-colors`}>
-                          <td className="px-6 py-4">
-                            <p className="text-sm font-bold text-slate-900">{check.rule_name}</p>
-                            <p className="text-xs text-indigo-600 mt-1 font-mono">{check.citation}</p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <StatusChip status={check.status} />
-                          </td>
-                          <td className="px-6 py-4">
-                            {check.confidence ? (
-                              <div>
-                                <p className="text-xs font-bold text-slate-700">{check.confidence.level}</p>
-                                <p className="text-[11px] text-slate-500">{check.confidence.score}% estimated</p>
+                      {checks.map((check, index) => {
+                        const needsManual = ['human_review_required', 'likely_violation'].includes(check.status);
+                        const existingInsp = inspections[index];
+                        const outcomeColors = {
+                          pass: 'bg-emerald-500',
+                          fail: 'bg-rose-500',
+                          complete: 'bg-indigo-600',
+                        };
+                        return (
+                          <tr key={index} className={`border-l-4 ${rowAccent(check.status)} hover:bg-slate-50/60 transition-colors`}>
+                            <td className="px-6 py-4">
+                              <p className="text-sm font-bold text-slate-900">{check.rule_name}</p>
+                              <p className="text-xs text-indigo-600 mt-1 font-mono">{check.citation}</p>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-1.5">
+                                <StatusChip status={check.status} />
+                                {existingInsp && (
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-white w-fit
+                                    ${existingInsp.outcome === 'pass' ? 'bg-emerald-500' : existingInsp.outcome === 'fail' ? 'bg-rose-500' : 'bg-indigo-600'}`}>
+                                    <FiCheckCircle className="h-2.5 w-2.5" />
+                                    Inspector: {existingInsp.outcome.toUpperCase()}
+                                  </span>
+                                )}
                               </div>
-                            ) : (
-                              <span className="text-xs text-slate-400">Not available</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className="text-sm text-slate-600 leading-relaxed">{check.message}</p>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-6 py-4">
+                              {check.confidence ? (
+                                <div>
+                                  <p className="text-xs font-bold text-slate-700">{check.confidence.level}</p>
+                                  <p className="text-[11px] text-slate-500">{check.confidence.score}% estimated</p>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-slate-400">Not available</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              <p className="text-sm text-slate-600 leading-relaxed">{check.message}</p>
+                            </td>
+                            <td className="px-6 py-4">
+                              {needsManual ? (
+                                existingInsp ? (
+                                  <div className="flex flex-col gap-1.5">
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold text-white ${outcomeColors[existingInsp.outcome] || 'bg-indigo-600'}`}>
+                                      <FiCheckCircle className="h-3 w-3" />
+                                      Inspected
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 capitalize">{existingInsp.outcome}</span>
+                                    <button
+                                      onClick={() => setInspectionModal({ check, index })}
+                                      className="inline-flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-700 font-semibold transition-colors"
+                                      title="Edit inspection"
+                                    >
+                                      <FiEdit2 className="h-3 w-3" /> Edit
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setInspectionModal({ check, index })}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold hover:bg-amber-100 hover:border-amber-400 transition-all duration-150 hover:scale-[1.03] shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                                  >
+                                    <FiClipboard className="h-3.5 w-3.5" />
+                                    Manual Inspect
+                                  </button>
+                                )
+                              ) : (
+                                <span className="text-xs text-slate-300">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -726,6 +876,7 @@ const ScanResult = () => {
                   {checks.filter((check) => check.status !== 'pass').map((check, index) => {
                     const confidence = scan.extracted_fields?.confidence_score;
                     const isFailure = check.status === 'fail' || check.status === 'likely_violation';
+                    const targetZone = isFailure ? getZoneForCheck(check) : null;
                     return (
                       <article key={`${check.rule_name}-${index}`} className="border-b border-slate-100 last:border-b-0 last:pb-0 pb-6">
                         <div className="flex items-start justify-between gap-4">
@@ -745,20 +896,14 @@ const ScanResult = () => {
                           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Reason</p>
                           <p className="text-sm text-slate-600 leading-relaxed">{check.message || 'The configured compliance rule did not pass.'}</p>
                         </div>
-                        <div className="mt-5">
-                          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Supporting evidence</p>
-                          {imageUrl ? (
-                            <div className="relative bg-slate-50 rounded-lg overflow-hidden border border-slate-200">
-                              <img src={imageUrl} alt={`Evidence for ${check.rule_name || 'compliance finding'}`} className="w-full max-h-72 object-contain" />
-                              {hasBboxData && showBboxes && (
-                                <BboxOverlay extractedData={extractedData} imgNaturalWidth={imgDims.natW} imgNaturalHeight={imgDims.natH} displayWidth={imgDims.dispW} displayHeight={imgDims.dispH} checks={checks} />
-                              )}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-slate-500">Original product image is unavailable.</p>
-                          )}
-                          <p className="text-xs text-slate-500 mt-2">{hasBboxData ? 'Region evidence uses OCR coordinates from the existing pipeline.' : 'No reliable OCR region is available for this finding; the original image is shown.'}</p>
-                        </div>
+                        {/* Zone-focused annotated evidence — only for fail/violation checks */}
+                        {isFailure && hasBboxData && (
+                          <ZoneEvidenceImage
+                            imageUrl={imageUrl}
+                            extractedData={extractedData}
+                            targetZone={targetZone}
+                          />
+                        )}
                       </article>
                     );
                   })}
@@ -772,6 +917,18 @@ const ScanResult = () => {
           </div>
         </div>
       </div>
+
+      {/* Manual Inspection Modal */}
+      {inspectionModal && (
+        <ManualInspectionModal
+          check={inspectionModal.check}
+          checkIndex={inspectionModal.index}
+          scanId={id}
+          existingInspection={inspections[inspectionModal.index] || null}
+          onClose={() => setInspectionModal(null)}
+          onSaved={handleInspectionSaved}
+        />
+      )}
     </div>
   );
 };

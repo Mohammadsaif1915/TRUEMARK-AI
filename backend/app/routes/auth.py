@@ -13,64 +13,6 @@ auth_bp = Blueprint("auth", __name__)
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
-
-@auth_bp.route("/register", methods=["POST"])
-def register():
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Request body must be JSON"}), 400
-
-        required_fields = ["username", "email", "password", "role"]
-        missing = [f for f in required_fields if not data.get(f)]
-        if missing:
-            return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
-
-        # Email format validation
-        email = data["email"].strip().lower()
-        if not EMAIL_REGEX.match(email):
-            return jsonify({"error": "Invalid email address"}), 400
-
-        # Password length validation
-        if len(data["password"]) < 6:
-            return jsonify({"error": "Password must be at least 6 characters"}), 400
-
-        # Duplicate checks
-        if User.query.filter_by(username=data["username"]).first():
-            return jsonify({"error": "Username already exists"}), 409
-        if User.query.filter_by(email=email).first():
-            return jsonify({"error": "Email already registered"}), 409
-
-        # Role validation
-        role = data["role"].strip().lower()
-        if role not in VALID_ROLES:
-            return jsonify({
-                "error": f"Please select a role. Must be one of: {', '.join(ROLE_DISPLAY_NAMES[r] for r in VALID_ROLES)}"
-            }), 400
-
-        user = User(
-            username=data["username"].strip(),
-            email=email,
-            role=role,
-            full_name=data.get("full_name", "").strip() or None,
-            badge_number=data.get("badge_number", "").strip() or None,
-            working_city=data.get("working_city", "").strip() or None,
-        )
-        user.set_password(data["password"])
-
-        db.session.add(user)
-        db.session.commit()
-
-        return jsonify({
-            "message": "User registered successfully",
-            "user": user.to_dict(),
-        }), 201
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Registration failed: {str(e)}"}), 500
-
-
 @auth_bp.route("/login", methods=["POST"])
 def login():
     try:
@@ -85,6 +27,13 @@ def login():
         user = User.query.filter_by(email=email).first()
         if not user or not user.check_password(data["password"]):
             return jsonify({"error": "Invalid email or password"}), 401
+
+        if user.must_change_password:
+            return jsonify({
+                "error": "Temporary password detected. Please change your password.",
+                "must_change_password": True,
+                "email": email
+            }), 403
 
         user.is_active = True
         user.last_login_at = datetime.now(timezone.utc)
@@ -101,6 +50,50 @@ def login():
 
     except Exception as e:
         return jsonify({"error": f"Login failed: {str(e)}"}), 500
+
+
+@auth_bp.route("/change-password", methods=["POST"])
+def change_password():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body must be JSON"}), 400
+
+        email = data.get("email", "").strip().lower()
+        temp_password = data.get("temporary_password")
+        new_password = data.get("new_password")
+
+        if not email or not temp_password or not new_password:
+            return jsonify({"error": "Missing required fields"}), 400
+
+        if len(new_password) < 8:
+            return jsonify({"error": "New password must be at least 8 characters"}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user or not user.check_password(temp_password):
+            return jsonify({"error": "Invalid email or temporary password"}), 401
+
+        if not user.must_change_password:
+            return jsonify({"error": "Password change not required"}), 400
+
+        user.set_password(new_password)
+        user.must_change_password = False
+        user.is_active = True
+        user.last_login_at = datetime.now(timezone.utc)
+        user.last_seen_at = user.last_login_at
+        user.last_logout_at = None
+        db.session.commit()
+
+        access_token = create_access_token(identity=str(user.id))
+        return jsonify({
+            "message": "Password updated successfully",
+            "access_token": access_token,
+            "user": user.to_dict(),
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Password change failed: {str(e)}"}), 500
 
 
 @auth_bp.route("/me", methods=["GET"])

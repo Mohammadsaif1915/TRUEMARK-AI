@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiAlertTriangle, FiShield, FiSearch, FiMapPin } from 'react-icons/fi';
+import { FiAlertTriangle, FiShield, FiSearch, FiMapPin, FiInfo } from 'react-icons/fi';
 import api from '../utils/api';
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 import indiaGeo from '../data/india.topo.json';
@@ -10,7 +10,86 @@ import indiaGeo from '../data/india.topo.json';
   since color IS the data here \u2014 green \u2192 yellow \u2192 orange \u2192 red maps
   directly to violation rate. Dropping the map onto a near-black panel
   makes that gradient read much more vividly than on light gray.
+
+  DEMO MODE: this file is currently wired to DEMO_* fixtures below instead
+  of the live `/dashboard/map` and `/dashboard/alerts` endpoints, so the
+  screen has something realistic to show before real inspection data
+  exists. Flip USE_DEMO_DATA to false (or delete the demo branch in
+  fetchData) once the backend is returning real numbers.
 */
+
+const USE_DEMO_DATA = true;
+
+/* ------------------------------------------------------------------ */
+/*  Demo fixtures \u2014 realistic-looking, clearly fake                    */
+/* ------------------------------------------------------------------ */
+const DEMO_STATES = [
+  { state: 'Maharashtra', total: 812, non_compliant: 146, violation_rate: 18 },
+  { state: 'Uttar Pradesh', total: 764, non_compliant: 298, violation_rate: 39 },
+  { state: 'Delhi', total: 693, non_compliant: 402, violation_rate: 58 },
+  { state: 'Karnataka', total: 588, non_compliant: 61, violation_rate: 10 },
+  { state: 'Tamil Nadu', total: 551, non_compliant: 88, violation_rate: 16 },
+  { state: 'West Bengal', total: 497, non_compliant: 179, violation_rate: 36 },
+  { state: 'Gujarat', total: 470, non_compliant: 52, violation_rate: 11 },
+  { state: 'Rajasthan', total: 402, non_compliant: 121, violation_rate: 30 },
+  { state: 'Telangana', total: 388, non_compliant: 34, violation_rate: 9 },
+  { state: 'Punjab', total: 344, non_compliant: 187, violation_rate: 54 },
+  { state: 'Kerala', total: 331, non_compliant: 22, violation_rate: 7 },
+  { state: 'Madhya Pradesh', total: 318, non_compliant: 96, violation_rate: 30 },
+  { state: 'Andhra Pradesh', total: 296, non_compliant: 41, violation_rate: 14 },
+  { state: 'Haryana', total: 281, non_compliant: 158, violation_rate: 56 },
+  { state: 'Bihar', total: 249, non_compliant: 112, violation_rate: 45 },
+  { state: 'Odisha', total: 210, non_compliant: 19, violation_rate: 9 },
+  { state: 'Assam', total: 176, non_compliant: 63, violation_rate: 36 },
+  { state: 'Jharkhand', total: 154, non_compliant: 48, violation_rate: 31 },
+  { state: 'Chhattisgarh', total: 139, non_compliant: 15, violation_rate: 11 },
+  { state: 'Uttarakhand', total: 118, non_compliant: 9, violation_rate: 8 },
+  { state: 'Himachal Pradesh', total: 91, non_compliant: 6, violation_rate: 7 },
+  { state: 'Goa', total: 64, non_compliant: 3, violation_rate: 5 },
+  { state: 'Jammu and Kashmir', total: 87, non_compliant: 40, violation_rate: 46 },
+];
+
+const DEMO_CITIES = [
+  { city: 'Mumbai', state: 'Maharashtra', total: 312, compliant: 258, non_compliant: 54, violation_rate: 17 },
+  { city: 'Pune', state: 'Maharashtra', total: 198, compliant: 172, non_compliant: 26, violation_rate: 13 },
+  { city: 'Nagpur', state: 'Maharashtra', total: 121, compliant: 98, non_compliant: 23, violation_rate: 19 },
+  { city: 'Lucknow', state: 'Uttar Pradesh', total: 214, compliant: 141, non_compliant: 73, violation_rate: 34 },
+  { city: 'Kanpur', state: 'Uttar Pradesh', total: 176, compliant: 96, non_compliant: 80, violation_rate: 45 },
+  { city: 'New Delhi', state: 'Delhi', total: 401, compliant: 176, non_compliant: 225, violation_rate: 56 },
+  { city: 'Bengaluru', state: 'Karnataka', total: 349, compliant: 316, non_compliant: 33, violation_rate: 9 },
+  { city: 'Mysuru', state: 'Karnataka', total: 112, compliant: 100, non_compliant: 12, violation_rate: 11 },
+  { city: 'Chennai', state: 'Tamil Nadu', total: 287, compliant: 246, non_compliant: 41, violation_rate: 14 },
+  { city: 'Coimbatore', state: 'Tamil Nadu', total: 134, compliant: 116, non_compliant: 18, violation_rate: 13 },
+  { city: 'Kolkata', state: 'West Bengal', total: 318, compliant: 209, non_compliant: 109, violation_rate: 34 },
+  { city: 'Ahmedabad', state: 'Gujarat', total: 261, compliant: 235, non_compliant: 26, violation_rate: 10 },
+  { city: 'Surat', state: 'Gujarat', total: 143, compliant: 128, non_compliant: 15, violation_rate: 10 },
+  { city: 'Jaipur', state: 'Rajasthan', total: 229, compliant: 165, non_compliant: 64, violation_rate: 28 },
+  { city: 'Chandigarh', state: 'Punjab', total: 176, compliant: 84, non_compliant: 92, violation_rate: 52 },
+  { city: 'Kochi', state: 'Kerala', total: 158, compliant: 148, non_compliant: 10, violation_rate: 6 },
+  { city: 'Gurugram', state: 'Haryana', total: 165, compliant: 74, non_compliant: 91, violation_rate: 55 },
+  { city: 'Patna', state: 'Bihar', total: 141, compliant: 79, non_compliant: 62, violation_rate: 44 },
+];
+
+const DEMO_ALERTS = [
+  { gtin: '8901030812345', product_name: 'GoldDrop Refined Sunflower Oil 1L', manufacturer: 'Suryodaya Agro Ltd.', total_scans: 47, fail_count: 33, risk_score: 70, last_seen: '2026-08-29T10:12:00Z' },
+  { gtin: '8901063400981', product_name: 'FreshBite Paneer 200g', manufacturer: 'Meadow Dairy Co-op', total_scans: 39, fail_count: 25, risk_score: 64, last_seen: '2026-08-31T06:40:00Z' },
+  { gtin: '8901719022456', product_name: 'SafeGlow LPG Regulator', manufacturer: 'Vishal Gas Appliances', total_scans: 28, fail_count: 17, risk_score: 61, last_seen: '2026-08-22T14:05:00Z' },
+  { gtin: '8901058873321', product_name: 'NutriKid Infant Formula Stage 1', manufacturer: 'Himalaya Nutrivita Pvt. Ltd.', total_scans: 33, fail_count: 18, risk_score: 55, last_seen: '2026-09-01T09:18:00Z' },
+  { gtin: '8901240099887', product_name: 'PureShine Dish Wash Bar', manufacturer: 'Ganga Home Care', total_scans: 24, fail_count: 12, risk_score: 50, last_seen: '2026-08-27T17:52:00Z' },
+  { gtin: '8901512376654', product_name: 'RoyalCrisp Namkeen Mixture 400g', manufacturer: 'Anand Snacks Industries', total_scans: 21, fail_count: 9, risk_score: 43, last_seen: '2026-08-19T11:30:00Z' },
+  { gtin: '8901887765432', product_name: 'ThermoSafe Electric Kettle 1.5L', manufacturer: 'Bright Spark Electricals', total_scans: 19, fail_count: 6, risk_score: 32, last_seen: '2026-08-15T08:47:00Z' },
+];
+
+const DemoBanner = () => (
+  <div
+    className="flex items-center gap-2 px-3.5 py-2 rounded-sm border text-xs font-semibold"
+    style={{ background: '#FFFBEA', borderColor: '#F4C10F55', color: '#8A6A00' }}
+    role="status"
+  >
+    <FiInfo className="h-3.5 w-3.5 shrink-0" />
+    <span>Showing demo data for preview \u2014 not live inspection results.</span>
+  </div>
+);
 
 const normalizeName = (name) => {
   if (!name) return "";
@@ -183,7 +262,34 @@ const IndiaMap = () => {
   const [error, setError] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchData = async () => {
+      setLoading(true);
+
+      if (USE_DEMO_DATA) {
+        // Simulate network latency so the loading state still reads naturally.
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        if (cancelled) return;
+        // "My inspections" is a smaller, scaled-down slice of the same demo set.
+        const scale = mineOnly ? 0.35 : 1;
+        setMapData(DEMO_STATES.map((s) => ({
+          ...s,
+          total: Math.max(1, Math.round(s.total * scale)),
+          non_compliant: Math.max(0, Math.round(s.non_compliant * scale)),
+        })));
+        setCityData(DEMO_CITIES.map((c) => ({
+          ...c,
+          total: Math.max(1, Math.round(c.total * scale)),
+          compliant: Math.max(0, Math.round(c.compliant * scale)),
+          non_compliant: Math.max(0, Math.round(c.non_compliant * scale)),
+        })));
+        setAlerts(mineOnly ? DEMO_ALERTS.slice(0, 3) : DEMO_ALERTS);
+        setError(false);
+        setLoading(false);
+        return;
+      }
+
       try {
         const [mapRes, alertRes] = await Promise.all([
           api.get(`/dashboard/map?mine=${mineOnly}`),
@@ -201,10 +307,12 @@ const IndiaMap = () => {
         setAlerts([]);
         setError(true);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
+
     fetchData();
+    return () => { cancelled = true; };
   }, [mineOnly]);
 
   const stateDataMap = {};
@@ -265,6 +373,8 @@ const IndiaMap = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
       <style>{pageStyles}</style>
+
+      {USE_DEMO_DATA && <DemoBanner />}
 
       <div>
         <h1 className="font-heading text-3xl font-bold text-[#0A0A0A]">National Scan Intelligence</h1>
